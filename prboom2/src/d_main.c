@@ -100,6 +100,7 @@
 #include "i_glob.h"
 
 #ifdef __vita__
+#include <dirent.h>
 #include "vita_log.h"
 #endif
 
@@ -107,6 +108,69 @@
 
 void GetFirstMap(int *ep, int *map); // Ty 08/29/98 - add "-warp x" functionality
 static void D_PageDrawer(void);
+
+#ifdef __vita__
+/* Keep mutable savegames separate from the configuration, WADs and logs in
+ * the Vita data directory.  Existing .dsg files are moved only when the
+ * destination does not already contain a file with the same name. */
+static char *VitaPrepareSaveDirectory(const char *base)
+{
+  char save_dir[512];
+  struct stat st;
+  DIR *dir;
+
+  if (doom_snprintf(save_dir, sizeof(save_dir), "%s/saves", base) < 0)
+    return NULL;
+
+  if (!M_stat(save_dir, &st))
+  {
+    if (!S_ISDIR(st.st_mode))
+    {
+      lprintf(LO_ERROR, "Vita save path is not a directory: %s\n", save_dir);
+      return NULL;
+    }
+  }
+  else if (M_mkdir(save_dir) && M_stat(save_dir, &st))
+  {
+    lprintf(LO_ERROR, "Unable to create Vita save directory: %s\n", save_dir);
+    return NULL;
+  }
+
+  dir = opendir(base);
+  if (dir)
+  {
+    struct dirent *entry;
+
+    while ((entry = readdir(dir)) != NULL)
+    {
+      char source[512];
+      char target[512];
+      struct stat source_stat;
+
+      if (entry->d_name[0] == '.')
+        continue;
+
+      if (!strrchr(entry->d_name, '.') ||
+          strcasecmp(strrchr(entry->d_name, '.'), ".dsg"))
+        continue;
+
+      doom_snprintf(source, sizeof(source), "%s/%s", base, entry->d_name);
+      doom_snprintf(target, sizeof(target), "%s/%s", save_dir, entry->d_name);
+
+      if (M_stat(source, &source_stat) || !S_ISREG(source_stat.st_mode) ||
+          !M_access(target, F_OK))
+        continue;
+
+      if (!rename(source, target))
+        lprintf(LO_DEBUG, "Moved legacy savegame to %s\n", target);
+    }
+
+    closedir(dir);
+  }
+
+  return strdup(save_dir);
+}
+#endif
 
 // CPhipps - removed wadfiles[] stuff
 
@@ -327,6 +391,7 @@ void D_Display (fixed_t frac)
       break;
     }
 
+    V_BeginPageStretch();
     switch (gamestate) {
     case GS_INTERMISSION:
       WI_Drawer();
@@ -340,6 +405,7 @@ void D_Display (fixed_t frac)
     default:
       break;
     }
+    V_EndPageStretch();
   } else if (gametic != basetic) { // In a level
     dboolean redrawborderstuff;
 
@@ -1039,13 +1105,23 @@ static void IdentifyVersion (void)
   //V.Aguilar (5/30/99): In LiNUX, default to $HOME/.lxdoom
   {
     // CPhipps - use DOOMSAVEDIR if defined
-    const char *p = M_getenv("DOOMSAVEDIR");
+    const char *configured_save_dir = M_getenv("DOOMSAVEDIR");
+    const char *p = configured_save_dir;
 
     if (p == NULL)
       p = I_DoomExeDir();
 
     free(basesavegame);
-    basesavegame = strdup(p);
+#ifdef __vita__
+    if (configured_save_dir == NULL)
+    {
+      basesavegame = VitaPrepareSaveDirectory(p);
+      if (basesavegame)
+        lprintf(LO_INFO, "Vita save directory: %s\n", basesavegame);
+    }
+    if (basesavegame == NULL)
+#endif
+      basesavegame = strdup(p);
   }
   if ((i=M_CheckParm("-save")) && i<myargc-1) //jff 3/24/98 if -save present
   {

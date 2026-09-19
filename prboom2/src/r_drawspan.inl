@@ -50,6 +50,14 @@
 #define PITCH int_pitch
 #endif
 
+#if V_TRANSPOSED_SOFTWARE
+#define R_DRAWSPAN_DEST(x, y) (drawvars.TOPLEFT + (x) * drawvars.PITCH + (y))
+#define R_DRAWSPAN_ADVANCE(dest) ((dest) += drawvars.PITCH)
+#else
+#define R_DRAWSPAN_DEST(x, y) (drawvars.TOPLEFT + (y) * drawvars.PITCH + (x))
+#define R_DRAWSPAN_ADVANCE(dest) (++(dest))
+#endif
+
 #if (R_DRAWSPAN_PIPELINE & RDC_DITHERZ)  
   #define GETDEPTHMAP(col) dither_colormaps[filter_getDitheredPixelLevel(x1, y, fracz)][(col)]
 #else
@@ -97,7 +105,7 @@ static void R_DRAWSPAN_FUNCNAME(draw_span_vars_t *dsvars)
   const fixed_t ystep = dsvars->ystep;
   const byte *source = dsvars->source;
   const byte *colormap = dsvars->colormap;
-  SCREENTYPE *dest = drawvars.TOPLEFT + dsvars->y*drawvars.PITCH + dsvars->x1;
+  SCREENTYPE *dest = R_DRAWSPAN_DEST(dsvars->x1, dsvars->y);
 #if (R_DRAWSPAN_PIPELINE & (RDC_DITHERZ|RDC_BILINEAR))
   const int y = dsvars->y;
   int x1 = dsvars->x1;
@@ -110,7 +118,8 @@ static void R_DRAWSPAN_FUNCNAME(draw_span_vars_t *dsvars)
   while (count) {
 #if ((R_DRAWSPAN_PIPELINE_BITS != 8) && (R_DRAWSPAN_PIPELINE & RDC_BILINEAR))
     // truecolor bilinear filtered
-    *dest++ = GETCOL(0);
+    *dest = GETCOL(0);
+    R_DRAWSPAN_ADVANCE(dest);
     xfrac += xstep;
     yfrac += ystep;
     count--;
@@ -118,7 +127,8 @@ static void R_DRAWSPAN_FUNCNAME(draw_span_vars_t *dsvars)
     x1--;
   #endif
 #elif (R_DRAWSPAN_PIPELINE & RDC_ROUNDED)
-    *dest++ = GETCOL(filter_getRoundedForSpan(xfrac, yfrac));
+    *dest = GETCOL(filter_getRoundedForSpan(xfrac, yfrac));
+    R_DRAWSPAN_ADVANCE(dest);
     xfrac += xstep;
     yfrac += ystep;
     count--;
@@ -137,7 +147,8 @@ static void R_DRAWSPAN_FUNCNAME(draw_span_vars_t *dsvars)
     const fixed_t spot = xtemp | ytemp;
     xfrac += xstep;
     yfrac += ystep;
-    *dest++ = GETCOL(source[spot]);
+    *dest = GETCOL(source[spot]);
+    R_DRAWSPAN_ADVANCE(dest);
     count--;
   #if (R_DRAWSPAN_PIPELINE & (RDC_DITHERZ|RDC_BILINEAR))
     x1--;
@@ -154,6 +165,8 @@ static void R_DRAWSPAN_FUNCNAME(draw_span_vars_t *dsvars)
 #undef PITCH
 #undef TOPLEFT
 #undef SCREENTYPE
+#undef R_DRAWSPAN_ADVANCE
+#undef R_DRAWSPAN_DEST
 
 #undef R_DRAWSPAN_PIPELINE_BITS
 #undef R_DRAWSPAN_PIPELINE

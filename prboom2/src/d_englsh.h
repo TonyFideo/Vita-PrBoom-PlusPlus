@@ -66,7 +66,11 @@
 #define MSGOFF      "Messages OFF"
 #define MSGON       "Messages ON"
 #define NETEND      "you can't end a netgame!\n\n"PRESSKEY
+#ifdef __vita__
+#define ENDGAME     "are you sure you want to end the game?\n\npress x."
+#else
 #define ENDGAME     "are you sure you want to end the game?\n\n"PRESSYN
+#endif
 #define RESTARTLEVEL "restart the level?\n\n"PRESSYN
 
 #ifdef __vita__

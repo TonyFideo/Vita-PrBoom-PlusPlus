@@ -27,8 +27,8 @@ static struct Option pwads_opts[] =
 struct Menu ui_menu_pwads =
 {
     MENU_PWADS,
-    "Files",
-    "Custom content settings",
+    "Custom Content",
+    "Custom Content settings",
     NULL, 0, 0, 0,
     UI_MenuFiles_Init,
     UI_MenuFiles_Update,
@@ -75,7 +75,7 @@ void UI_MenuFiles_Reload(void)
     }
 
     pwads_opts[MAX_FILES + 0].codevar = fs_profiles[ui_profile].demo;
-    pwads_opts[MAX_FILES + 0].file.dir = fs_pwad_dir;
+    pwads_opts[MAX_FILES + 0].file.dir = fs_demo_dir;
     pwads_opts[MAX_FILES + 0].file.ext[0] = "lmp";
     pwads_opts[MAX_FILES + 0].file.ext[1] = NULL;
 

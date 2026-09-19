@@ -47,6 +47,13 @@
 
 dboolean M_Responder (event_t *ev);
 
+#ifdef __vita__
+/* Poll the Vita IME and feed completed numeric edits through M_Responder. */
+void M_ProcessVitaIme (void);
+/* Poll the Vita front touch panel for menus and interactive dialogs. */
+void M_ProcessVitaTouch (void);
+#endif
+
 // Called by main loop,
 // only used for menu (skull cursor) animation.
 
@@ -113,9 +120,17 @@ extern dboolean menu_background;
 #define S_CREDIT  0x200000  // killough 10/98: credit
 #define S_BADVID  0x400000  // killough 12/98: video mode change error
 #define S_CHOICE  0x800000  // this item has several values
+#define S_SLIDER  0x4000000 // integer slider adjusted with left/right
+
+/* Vita-specific percentage slider with a 0-100 range.  It retains the
+ * S_SLIDER bit so it follows the normal setup-menu path, while the extra bit
+ * selects the joystick deadzone renderer/step range instead of the existing
+ * 0-50% sector-light slider. */
+#define S_VITA_PERCENT_SLIDER  0x8000000
 
 //e6y
 #define S_DISABLE  0x1000000
+#define S_HIDDEN   0x2000000 // Item is not drawn (platform-specific hidden item)
 
 /* S_SHOWDESC  = the set of items whose description should be displayed
  * S_SHOWSET   = the set of items whose setting should be displayed
@@ -123,13 +138,13 @@ extern dboolean menu_background;
  * S_HASDEFPTR = the set of items whose var field points to default array
  */
 
-#define S_SHOWDESC (S_TITLE|S_YESNO|S_CRITEM|S_COLOR|S_CHAT|S_RESET|S_PREV|S_NEXT|S_KEY|S_WEAP|S_NUM|S_FILE|S_CREDIT|S_CHOICE)
+#define S_SHOWDESC (S_TITLE|S_YESNO|S_CRITEM|S_COLOR|S_CHAT|S_RESET|S_PREV|S_NEXT|S_KEY|S_WEAP|S_NUM|S_FILE|S_CREDIT|S_CHOICE|S_SLIDER)
 
-#define S_SHOWSET  (S_YESNO|S_CRITEM|S_COLOR|S_CHAT|S_KEY|S_WEAP|S_NUM|S_FILE|S_CHOICE)
+#define S_SHOWSET  (S_YESNO|S_CRITEM|S_COLOR|S_CHAT|S_KEY|S_WEAP|S_NUM|S_FILE|S_CHOICE|S_SLIDER)
 
 #define S_STRING (S_CHAT|S_FILE)
 
-#define S_HASDEFPTR (S_STRING|S_YESNO|S_NUM|S_WEAP|S_COLOR|S_CRITEM|S_CHOICE)
+#define S_HASDEFPTR (S_STRING|S_YESNO|S_NUM|S_WEAP|S_COLOR|S_CRITEM|S_CHOICE|S_SLIDER)
 
 /****************************
  *

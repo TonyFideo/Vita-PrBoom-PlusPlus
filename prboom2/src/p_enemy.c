@@ -790,6 +790,7 @@ static dboolean P_LookForPlayers(mobj_t *actor, dboolean allaround)
 {
   player_t *player;
   int stop, stopc, c;
+  dboolean unseen[MAXPLAYERS] = {0};
 
   if (actor->flags & MF_FRIEND)
     {  // killough 9/9/98: friendly monsters go about players differently
@@ -866,8 +867,12 @@ static dboolean P_LookForPlayers(mobj_t *actor, dboolean allaround)
       if (player->health <= 0)
   continue;               // dead
 
-      if (!P_IsVisible(actor, player->mo, allaround))
-  continue;
+      if (unseen[actor->lastlook] ||
+          !P_IsVisible(actor, player->mo, allaround))
+        {
+          unseen[actor->lastlook] = true;
+          continue;
+        }
 
       P_SetTarget(&actor->target, player->mo);
 
@@ -921,6 +926,16 @@ static dboolean P_LookForMonsters(mobj_t *actor, dboolean allaround)
 
       current_actor = actor;
       current_allaround = allaround;
+
+      // A cl11+ compatibility bug can add the player to the monster friend
+      // list after taking damage below 50% health. If it is the only entry,
+      // searching that list is both unnecessary and very expensive on maps
+      // with large monster counts. Keep the RNG call for demo sync.
+      if (((mobj_t *) cap->cnext)->player && cap->cnext == cap->cprev)
+        {
+          P_Random(pr_friends);
+          return false;
+        }
 
       // Search first in the immediate vicinity.
 
@@ -1102,12 +1117,7 @@ void A_Look(mobj_t *actor)
       if (actor->type==MT_SPIDER || actor->type == MT_CYBORG)
         S_StartSound(NULL, sound);          // full volume
       else
-      {
-        S_StartSound(actor, sound);
-       // [FG] make seesounds uninterruptible
-        if (full_sounds)
-          S_UnlinkSound(actor);
-      }
+      S_StartSound(actor, sound);
     }
   P_SetMobjState(actor, actor->info->seestate);
 }

@@ -208,6 +208,7 @@ typedef enum {
 	SCALE_PASS_2_UNIF, // Q
 #endif
 #endif
+	SATURATION_UNIF = 'R' - 'A', // R
 	FRAGMENT_UNIFORMS_NUM
 } frag_uniform_type;
 #define flag_dirty_frag_unif(x) dirty_frag_unifs |= (1 << (x));
@@ -329,7 +330,7 @@ extern int NEW_DISPLAY_HEIGHT; // Requested new display height in pixels
 #include "texture_callbacks.h"
 
 // Fixed-function pipeline shader cache settings
-#define FFP_SHADER_CACHE_MAGIC 29 // This must be increased whenever ffp shader sources or shader mask/combiner mask changes
+#define FFP_SHADER_CACHE_MAGIC 31 // This must be increased whenever ffp shader sources or shader mask/combiner mask changes
 
 // Custom shaders pipeline shader cache settings
 #ifdef HAVE_SHADER_CACHE

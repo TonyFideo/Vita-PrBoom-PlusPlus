@@ -32,6 +32,10 @@ void IN_Free(void);
 
 int IN_ButtonHeld(int btn);
 int IN_ButtonPressed(int btn);
+int IN_ConfirmPressed(void);
+int IN_BackPressed(void);
+int IN_ConfirmHeld(void);
+int IN_BackHeld(void);
 void IN_WaitForButton(int btn);
 int IN_GetFirstButton(void);
 

@@ -15,6 +15,7 @@ uniform float2 Ppass1_scale;
 #define point_sprite %d
 #define interp %d
 #define srgb_mode %d
+#define saturation_mode %d
 
 #if interp == 1
 #define TEXCOORD0 TEXCOORD0_HALF
@@ -104,6 +105,10 @@ float4 main(
 	uniform float Mfog_range,
 	uniform float Nfog_far,
 	uniform float Hfog_density
+#if saturation_mode == 1
+	,
+	uniform float RvitaSaturation
+#endif
 	)
 {
 #if alpha_test_mode == 6
@@ -190,6 +195,22 @@ float4 main(
 	texColor.rgb = lerp(KfogColor.rgb, texColor.rgb, vFog);
 #endif
 
+#if saturation_mode == 1
+	float3 outputColor;
+#if srgb_mode == 1
+	float3 cutoff = float3(texColor.r < 0.0031308f ? 1.0f : 0.0f, texColor.g < 0.0031308f ? 1.0f : 0.0f, texColor.b < 0.0031308f ? 1.0f : 0.0f);
+	float3 higher = float3(1.055f) * pow(texColor.rgb, float3(1.0f / 2.4f)) - float3(0.055f);
+	float3 lower = texColor.rgb * float3(12.92f);
+	outputColor = lerp(higher, lower, cutoff);
+#else
+	outputColor = texColor.rgb;
+#endif
+
+	/* Vita-only runtime color saturation. */
+	float3 gray = float3(dot(outputColor, float3(0.2126f, 0.7152f, 0.0722f)));
+	outputColor = clamp(gray + (outputColor - gray) * RvitaSaturation, 0.0f, 1.0f);
+	return float4(outputColor, texColor.a);
+#else
 #if srgb_mode == 1
 	float3 cutoff = float3(texColor.r < 0.0031308f ? 1.0f : 0.0f, texColor.g < 0.0031308f ? 1.0f : 0.0f, texColor.b < 0.0031308f ? 1.0f : 0.0f);
 	float3 higher = float3(1.055f) * pow(texColor.rgb, float3(1.0f / 2.4f)) - float3(0.055f);
@@ -197,6 +218,7 @@ float4 main(
 	return float4(lerp(higher, lower, cutoff), texColor.a);
 #else
 	return texColor;
+#endif
 #endif
 }
 )";

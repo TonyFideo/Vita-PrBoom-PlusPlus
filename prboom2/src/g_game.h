@@ -126,6 +126,9 @@ extern int  key_menu_down_alt;
 extern int  key_menu_backspace_alt;
 extern int  key_menu_escape_alt;
 extern int  key_menu_enter_alt;
+#ifdef __vita__
+void G_ConfigureVitaMenuButtons(void);
+#endif
 extern int  key_menu_clear_alt;
 extern int  key_strafeleft;
 extern int  key_straferight;

@@ -990,6 +990,83 @@ void R_DrawSpan(draw_span_vars_t *dsvars) {
   R_GetDrawSpanFunc(drawvars.filterfloor, drawvars.filterz)(dsvars);
 }
 
+void R_DrawPlaneColumn(int x, int y1, int y2, const byte *source,
+                       const fixed_t *xbase, const fixed_t *ybase,
+                       const fixed_t *xstep, const fixed_t *ystep,
+                       const lighttable_t *const *colormap)
+{
+  int y;
+  const int xdelta = x - centerx;
+
+  if (V_GetMode() == VID_MODEGL)
+    return;
+
+  if (y1 < 0)
+    y1 = 0;
+  if (y2 >= SCREENHEIGHT)
+    y2 = SCREENHEIGHT - 1;
+
+  for (y = y1; y <= y2; y++)
+  {
+    const lighttable_t *map = colormap[y];
+    fixed_t xfrac;
+    fixed_t yfrac;
+    byte color;
+
+    /* y == centery has no valid plane distance, matching R_MapPlane(). */
+    if (!map)
+      continue;
+
+    xfrac = xbase[y] + xdelta * xstep[y];
+    yfrac = ybase[y] + xdelta * ystep[y];
+    color = map[source[((xfrac >> 16) & 63) | ((yfrac >> 10) & 4032)]];
+
+    switch (V_GetMode())
+    {
+      case VID_MODE8:
+#if V_TRANSPOSED_SOFTWARE
+        drawvars.byte_topleft[x * drawvars.byte_pitch + y] = color;
+#else
+        drawvars.byte_topleft[y * drawvars.byte_pitch + x] = color;
+#endif
+        break;
+
+      case VID_MODE15:
+#if V_TRANSPOSED_SOFTWARE
+        drawvars.short_topleft[x * drawvars.short_pitch + y] =
+          VID_PAL15(color, VID_COLORWEIGHTMASK);
+#else
+        drawvars.short_topleft[y * drawvars.short_pitch + x] =
+          VID_PAL15(color, VID_COLORWEIGHTMASK);
+#endif
+        break;
+
+      case VID_MODE16:
+#if V_TRANSPOSED_SOFTWARE
+        drawvars.short_topleft[x * drawvars.short_pitch + y] =
+          VID_PAL16(color, VID_COLORWEIGHTMASK);
+#else
+        drawvars.short_topleft[y * drawvars.short_pitch + x] =
+          VID_PAL16(color, VID_COLORWEIGHTMASK);
+#endif
+        break;
+
+      case VID_MODE32:
+#if V_TRANSPOSED_SOFTWARE
+        drawvars.int_topleft[x * drawvars.int_pitch + y] =
+          VID_PAL32(color, VID_COLORWEIGHTMASK);
+#else
+        drawvars.int_topleft[y * drawvars.int_pitch + x] =
+          VID_PAL32(color, VID_COLORWEIGHTMASK);
+#endif
+        break;
+
+      default:
+        break;
+    }
+  }
+}
+
 void R_InitBuffersRes(void)
 {
   extern byte *solidcol;
@@ -1028,13 +1105,23 @@ void R_InitBuffer(int width, int height)
 
   viewwindowy = width==SCREENWIDTH ? 0 : (SCREENHEIGHT-ST_SCALED_HEIGHT-height)>>1;
 
+#if V_TRANSPOSED_SOFTWARE
+  drawvars.byte_topleft = screens[0].data + viewwindowx*screens[0].byte_pitch + viewwindowy;
+  drawvars.short_topleft = (unsigned short *)(screens[0].data) + viewwindowx*screens[0].short_pitch + viewwindowy;
+  drawvars.int_topleft = (unsigned int *)(screens[0].data) + viewwindowx*screens[0].int_pitch + viewwindowy;
+#else
   drawvars.byte_topleft = screens[0].data + viewwindowy*screens[0].byte_pitch + viewwindowx;
   drawvars.short_topleft = (unsigned short *)(screens[0].data) + viewwindowy*screens[0].short_pitch + viewwindowx;
   drawvars.int_topleft = (unsigned int *)(screens[0].data) + viewwindowy*screens[0].int_pitch + viewwindowx;
+#endif
   drawvars.byte_pitch = screens[0].byte_pitch;
   drawvars.short_pitch = screens[0].short_pitch;
   drawvars.int_pitch = screens[0].int_pitch;
 
+#if V_TRANSPOSED_SOFTWARE
+  for (i=0; i<FUZZTABLE; i++)
+    fuzzoffset[i] = fuzzoffset_org[i];
+#else
   if (V_GetMode() == VID_MODE8) {
     for (i=0; i<FUZZTABLE; i++)
       fuzzoffset[i] = fuzzoffset_org[i]*screens[0].byte_pitch;
@@ -1045,6 +1132,7 @@ void R_InitBuffer(int width, int height)
     for (i=0; i<FUZZTABLE; i++)
       fuzzoffset[i] = fuzzoffset_org[i]*screens[0].int_pitch;
   }
+#endif
 }
 
 //
@@ -1133,9 +1221,23 @@ void R_FillBackScreen (void)
 void R_VideoErase(int x, int y, int count)
 {
   if (V_GetMode() != VID_MODEGL)
+#if V_TRANSPOSED_SOFTWARE
+  {
+    int i;
+    const int depth = V_GetPixelDepth();
+
+    for (i = 0; i < count; i++)
+    {
+      memcpy(screens[0].data + (x + i) * screens[0].byte_pitch + y * depth,
+             screens[1].data + (x + i) * screens[1].byte_pitch + y * depth,
+             depth);
+    }
+  }
+#else
     memcpy(screens[0].data+y*screens[0].byte_pitch+x*V_GetPixelDepth(),
            screens[1].data+y*screens[1].byte_pitch+x*V_GetPixelDepth(),
            count*V_GetPixelDepth());   // LFB copy.
+#endif
 }
 
 //

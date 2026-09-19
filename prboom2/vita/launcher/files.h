@@ -49,6 +49,7 @@ struct Profile
 extern struct Profile fs_profiles[MAX_PROFILES];
 
 extern char fs_pwad_dir[MAX_FNAME];
+extern char fs_demo_dir[MAX_FNAME];
 extern char fs_temp_dir[MAX_FNAME];
 extern char fs_iwad_dir[MAX_FNAME];
 

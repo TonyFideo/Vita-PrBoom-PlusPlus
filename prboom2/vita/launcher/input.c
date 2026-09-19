@@ -1,5 +1,6 @@
 #include "utils.h"
 #include "input.h"
+#include "vita_buttons.h"
 
 #include <vitasdk.h>
 
@@ -9,6 +10,8 @@ static SceTouchData touch_tmp;
 
 int IN_Init(void)
 {
+    /* R_Init initializes AppUtil before the launcher initializes input. */
+    VitaButtons_Initialize();
     sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, 1);
     sceTouchSetSamplingState(SCE_TOUCH_PORT_BACK, 1);
     sceCtrlPeekBufferPositive(0, &pad, 1);
@@ -78,6 +81,36 @@ int IN_ButtonHeld(int btn)
 
     btn = TranslateButton(btn);
     return (pad.buttons & btn);
+}
+
+static int IN_ConfirmButton(void)
+{
+    return VitaButtons_IsCircleConfirm() ? B_CIRCLE : B_CROSS;
+}
+
+static int IN_BackButton(void)
+{
+    return VitaButtons_IsCircleConfirm() ? B_CROSS : B_CIRCLE;
+}
+
+int IN_ConfirmPressed(void)
+{
+    return IN_ButtonPressed(IN_ConfirmButton());
+}
+
+int IN_BackPressed(void)
+{
+    return IN_ButtonPressed(IN_BackButton());
+}
+
+int IN_ConfirmHeld(void)
+{
+    return IN_ButtonHeld(IN_ConfirmButton());
+}
+
+int IN_BackHeld(void)
+{
+    return IN_ButtonHeld(IN_BackButton());
 }
 
 void IN_WaitForButton(int btn)

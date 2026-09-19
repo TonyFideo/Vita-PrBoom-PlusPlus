@@ -142,6 +142,10 @@ extern const lighttable_t *fixedcolormap;
 // Utility functions.
 //
 
+// Applies the Vita-only dark-sector light boost at render time.
+// The map's sector lightlevel remains unchanged.
+int R_ApplyMinimumSectorLight(int lightlevel);
+
 PUREFUNC int R_PointOnSide(fixed_t x, fixed_t y, const node_t *node);
 PUREFUNC int R_PointOnSegSide(fixed_t x, fixed_t y, const seg_t *line);
 angle_t R_PointToAngle2(fixed_t x1, fixed_t y1, fixed_t x, fixed_t y);

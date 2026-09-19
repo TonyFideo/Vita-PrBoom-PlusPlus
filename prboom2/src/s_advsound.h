@@ -35,7 +35,6 @@
 #define __S_ADVSOUND__
 
 #include "p_mobj.h"
-#include "sounds.h"
 
 #ifdef __GNUG__
 #pragma interface
@@ -56,7 +55,6 @@ typedef struct musinfo_s
   int items[MAX_MUS_ENTRIES];
 } musinfo_t;
 
-extern musicinfo_t *mus_playing;
 extern musinfo_t musinfo;
 
 void S_ParseMusInfo(const char *mapid);

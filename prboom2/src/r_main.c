@@ -59,6 +59,7 @@
 #include <math.h>
 #include "e6y.h"//e6y
 #include "xs_Float.h"
+#include "m_misc.h"
 
 // e6y
 // Now they are variables. Depends from render_doom_lightmaps variable.
@@ -71,6 +72,46 @@ int render_doom_lightmaps;
 int r_frame_count;
 
 int r_have_internal_hires = false;
+
+int R_ApplyMinimumSectorLight(int lightlevel)
+{
+#ifdef __vita__
+  int minimum_increase = vita_minimum_sector_light;
+  int average_increase = vita_average_sector_light;
+  int original_lightlevel = lightlevel;
+
+  // Keep the runtime value safe even if an old or manually edited config
+  // contains a value outside the menu's 0-50 percentage range.
+  if (minimum_increase < 0)
+    minimum_increase = 0;
+  else if (minimum_increase > 50)
+    minimum_increase = 50;
+
+  if (average_increase < 0)
+    average_increase = 0;
+  else if (average_increase > 50)
+    average_increase = 50;
+
+  // The two controls use the original sector light level to choose their
+  // range. This keeps the 128 boundary stable even when both controls are on.
+  if (minimum_increase && original_lightlevel >= 0 &&
+      original_lightlevel <= 128)
+    {
+      lightlevel += (original_lightlevel * minimum_increase + 50) / 100;
+    }
+
+  if (average_increase && original_lightlevel >= 128 &&
+      original_lightlevel <= 255)
+    {
+      lightlevel += (original_lightlevel * average_increase + 50) / 100;
+    }
+
+  if (lightlevel > 255)
+    lightlevel = 255;
+#endif
+
+  return lightlevel;
+}
 
 // Fineangles in the SCREENWIDTH wide window.
 #define FIELDOFVIEW 2048
@@ -544,6 +585,85 @@ static void InitStretchParam(stretch_param_t* offsets, int stretch, enum patch_t
   }
 }
 
+static cb_video_t page_video_aspect;
+static cb_video_t page_video_integer;
+static cb_video_t page_video_full;
+
+static void InitPageVideo(cb_video_t *page_video, int width, int height)
+{
+  memset(page_video, 0, sizeof(*page_video));
+
+  page_video->width = MAX(1, width);
+  page_video->height = MAX(1, height);
+  page_video->xstep = ((320 << FRACBITS) / page_video->width) + 1;
+  page_video->ystep = ((200 << FRACBITS) / page_video->height) + 1;
+
+  GenLookup(page_video->x1lookup, page_video->x2lookup,
+            page_video->width, 320, page_video->xstep);
+  GenLookup(page_video->y1lookup, page_video->y2lookup,
+            page_video->height, 200, page_video->ystep);
+}
+
+static void InitPageStretchParams(stretch_param_t params[VPT_ALIGN_MAX],
+                                  cb_video_t *page_video,
+                                  int deltax, int deltay)
+{
+  int i;
+
+  for (i = 0; i < VPT_ALIGN_MAX; ++i)
+  {
+    memset(&params[i], 0, sizeof(params[i]));
+    params[i].video = page_video;
+    params[i].deltax1 = deltax;
+    params[i].deltax2 = deltax;
+    params[i].deltay1 = deltay;
+    params[i].deltay2 = deltay;
+  }
+}
+
+static void R_SetupPageScaling(void)
+{
+  int aspect_width;
+  int aspect_height;
+  int integer_scale;
+  int integer_width;
+  int integer_height;
+
+  /* Keep pages in Doom's corrected 4:3 display aspect ratio. */
+  if ((int_64_t)SCREENWIDTH * 3 > (int_64_t)SCREENHEIGHT * 4)
+  {
+    aspect_height = SCREENHEIGHT;
+    aspect_width = SCREENHEIGHT * 4 / 3;
+  }
+  else
+  {
+    aspect_width = SCREENWIDTH;
+    aspect_height = SCREENWIDTH * 3 / 4;
+  }
+
+  /* Integer scaling applies to a corrected 320x240 page canvas. */
+  integer_scale = MIN(SCREENWIDTH / 320, SCREENHEIGHT / 240);
+  if (integer_scale < 1)
+    integer_scale = 1;
+  integer_width = 320 * integer_scale;
+  integer_height = 240 * integer_scale;
+
+  InitPageVideo(&page_video_aspect, aspect_width, aspect_height);
+  InitPageVideo(&page_video_integer, integer_width, integer_height);
+  InitPageVideo(&page_video_full, SCREENWIDTH, SCREENHEIGHT);
+
+  InitPageStretchParams(page_stretch_params_table[PAGE_STRETCH_ASPECT],
+                        &page_video_aspect,
+                        (SCREENWIDTH - aspect_width) / 2,
+                        (SCREENHEIGHT - aspect_height) / 2);
+  InitPageStretchParams(page_stretch_params_table[PAGE_STRETCH_INTEGER],
+                        &page_video_integer,
+                        (SCREENWIDTH - integer_width) / 2,
+                        (SCREENHEIGHT - integer_height) / 2);
+  InitPageStretchParams(page_stretch_params_table[PAGE_STRETCH_FULL],
+                        &page_video_full, 0, 0);
+}
+
 void R_SetupViewScaling(void)
 {
   int i, k;
@@ -592,6 +712,8 @@ void R_SetupViewScaling(void)
   video_full.height = SCREENHEIGHT;
   GenLookup(video_full.x1lookup, video_full.x2lookup, video_full.width, 320, video_full.xstep);
   GenLookup(video_full.y1lookup, video_full.y2lookup, video_full.height, 200, video_full.ystep);
+
+  R_SetupPageScaling();
 }
 
 void R_MultMatrixVecd(const float matrix[16], const float in[4], float out[4])

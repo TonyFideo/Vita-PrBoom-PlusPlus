@@ -57,6 +57,10 @@
 
 #ifdef __vita__
 #include <vitaGL.h>
+#include "vita_buttons.h"
+#include "vita_ime.h"
+#include "m_menu.h"
+#include "m_misc.h"
 #endif
 
 #include "m_argv.h"
@@ -73,6 +77,9 @@
 #include "d_event.h"
 #include "d_deh.h"
 #include "i_joy.h"
+#ifdef __vita__
+#include "i_vita_motion.h"
+#endif
 #include "i_video.h"
 #include "i_capture.h"
 #include "z_zone.h"
@@ -86,6 +93,9 @@
 
 #ifdef GL_DOOM
 #include "gl_struct.h"
+#ifdef __vita__
+#include "gl_saturation.h"
+#endif
 #endif
 
 #include "e6y.h"//e6y
@@ -247,6 +257,12 @@ static void I_GetEvent(void)
 
 while (SDL_PollEvent(Event))
 {
+#ifdef __vita__
+  /* Common Dialog owns Vita input while the on-screen keyboard is open. */
+  if (VitaIme_IsActive())
+    continue;
+#endif
+
   switch (Event->type) {
   case SDL_KEYDOWN:
 #ifdef MACOSX
@@ -432,11 +448,26 @@ static int I_GetDisplayMode(const int disp, const int mode, SDL_DisplayMode *out
 
 void I_StartTic (void)
 {
+#ifdef __vita__
+  M_ProcessVitaIme();
+#endif
+
   I_GetEvent();
+
+#ifdef __vita__
+  M_ProcessVitaTouch();
+
+  if (VitaIme_IsActive())
+    return;
+#endif
 
   I_ReadMouse();
 
   I_PollJoystick();
+
+#ifdef __vita__
+  I_PollVitaMotion();
+#endif
 }
 
 //
@@ -470,6 +501,10 @@ static void I_InitInputs(void)
   {
     MouseAccelChanging();
   }
+
+#ifdef __vita__
+  I_InitVitaMotion();
+#endif
 
   I_InitJoystick();
 }
@@ -506,11 +541,18 @@ static void I_UploadNewPalette(int pal, int force)
   static SDL_Color* colours;
   static int cachedgamma;
   static size_t num_pals;
+#ifdef __vita__
+  static int cachedsaturation = -1;
+#endif
 
   if (V_GetMode() != VID_MODE8)
     return;
 
-  if ((colours == NULL) || (cachedgamma != usegamma) || force) {
+  if ((colours == NULL) || (cachedgamma != usegamma)
+#ifdef __vita__
+      || (cachedsaturation != vita_color_saturation)
+#endif
+      || force) {
     int pplump = W_GetNumForName("PLAYPAL");
     int gtlump = (W_CheckNumForName)("GAMMATBL",ns_prboom);
     register const byte * palette = (const byte*)W_CacheLumpNum(pplump);
@@ -530,12 +572,18 @@ static void I_UploadNewPalette(int pal, int force)
       colours[i].r = gtable[palette[0]];
       colours[i].g = gtable[palette[1]];
       colours[i].b = gtable[palette[2]];
+#ifdef __vita__
+      V_ApplyColorSaturation(&colours[i].r, &colours[i].g, &colours[i].b);
+#endif
       palette += 3;
     }
 
     W_UnlockLumpNum(pplump);
     W_UnlockLumpNum(gtlump);
     num_pals/=256;
+#ifdef __vita__
+    cachedsaturation = vita_color_saturation;
+#endif
   }
 
 #ifdef RANGECHECK
@@ -552,6 +600,10 @@ static void I_UploadNewPalette(int pal, int force)
 
 void I_ShutdownGraphics(void)
 {
+#ifdef __vita__
+  I_ShutdownVitaMotion();
+  VitaIme_Shutdown();
+#endif
   SDL_FreeCursor(cursors[1]);
   DeactivateMouse();
 }
@@ -572,6 +624,12 @@ void I_StartRendering (void)
   if (!in_render_frame)
   {
     in_render_frame = 1;
+#ifdef GL_DOOM
+#ifdef __vita__
+    if (V_GetMode() == VID_MODEGL)
+      VitaSaturation_BeginFrame();
+#endif
+#endif
   }
 }
 
@@ -589,6 +647,81 @@ void I_StopRendering(int wait)
     glFinish();
 #endif
 }
+
+#ifdef __vita__
+/* The software renderer writes one complete Doom column contiguously. SDL's
+ * upload surface remains row-major, so transpose the completed frame once at
+ * the presentation boundary. The OpenGL/VitaGL path never enters here. */
+static void I_CopyTransposedSoftwareFrame(void)
+{
+  int x, y;
+  const int depth = V_GetPixelDepth();
+  byte *surface_pixels;
+
+  if (V_GetMode() == VID_MODEGL || !screen || !screens[0].data || depth <= 0)
+    return;
+
+  if (SDL_MUSTLOCK(screen) && SDL_LockSurface(screen) < 0)
+  {
+    lprintf(LO_WARN, "I_CopyTransposedSoftwareFrame: %s\n", SDL_GetError());
+    return;
+  }
+
+  surface_pixels = (byte *)screen->pixels;
+
+  if (depth == 1)
+  {
+    for (x = 0; x < SCREENWIDTH; x++)
+    {
+      const byte *source = screens[0].data + x * screens[0].byte_pitch;
+      byte *dest = surface_pixels + x;
+
+      for (y = 0; y < SCREENHEIGHT; y++)
+      {
+        *dest = *source++;
+        dest += screen->pitch;
+      }
+    }
+  }
+  else if (depth == 2)
+  {
+    for (x = 0; x < SCREENWIDTH; x++)
+    {
+      const unsigned short *source =
+        (const unsigned short *)(screens[0].data + x * screens[0].byte_pitch);
+      unsigned short *dest =
+        (unsigned short *)(surface_pixels + x * depth);
+      const int dest_pitch = screen->pitch / (int)sizeof(*dest);
+
+      for (y = 0; y < SCREENHEIGHT; y++)
+      {
+        *dest = *source++;
+        dest += dest_pitch;
+      }
+    }
+  }
+  else
+  {
+    for (x = 0; x < SCREENWIDTH; x++)
+    {
+      const unsigned int *source =
+        (const unsigned int *)(screens[0].data + x * screens[0].byte_pitch);
+      unsigned int *dest =
+        (unsigned int *)(surface_pixels + x * depth);
+      const int dest_pitch = screen->pitch / (int)sizeof(*dest);
+
+      for (y = 0; y < SCREENHEIGHT; y++)
+      {
+        *dest = *source++;
+        dest += dest_pitch;
+      }
+    }
+  }
+
+  if (SDL_MUSTLOCK(screen))
+    SDL_UnlockSurface(screen);
+}
+#endif
 
 //
 // I_FinishUpdate
@@ -654,12 +787,17 @@ void I_FinishUpdate (void)
     // proff 04/05/2000: swap OpenGL buffers
     gld_Finish();
 #ifdef __vita__
+    VitaSaturation_EndFrame();
     // Modern VitaGL owns scene begin/end and display-queue submission.
-    vglSwapBuffers(GL_FALSE);
+    vglSwapBuffers(VitaIme_ShouldUpdateCommonDialog() ? GL_TRUE : GL_FALSE);
 #endif
     I_StopRendering(0);
     return;
   }
+#endif
+
+#ifdef __vita__
+  I_CopyTransposedSoftwareFrame();
 #endif
 
 #ifndef __vita__
@@ -723,7 +861,7 @@ void I_FinishUpdate (void)
   glEnd();
 
 #ifdef __vita__
-  vglSwapBuffers(GL_FALSE);
+  vglSwapBuffers(VitaIme_ShouldUpdateCommonDialog() ? GL_TRUE : GL_FALSE);
 #endif
   I_StopRendering(0);
 #else
@@ -1243,7 +1381,7 @@ void I_InitScreenResolution(void)
 
 void I_SetWindowCaption(void)
 {
-  SDL_SetWindowTitle(NULL, PACKAGE_NAME " " PACKAGE_VERSION);
+  SDL_SetWindowTitle(NULL, PACKAGE_NAME " " PACKAGE_DISPLAY_VERSION);
 }
 
 // 
@@ -1285,10 +1423,13 @@ void I_InitGraphics(void)
       render_multisampling == 2 ? SCE_GXM_MULTISAMPLE_2X :
                                   SCE_GXM_MULTISAMPLE_4X;
     vglInitExtended(0x800000, DEFAULT_SCREEN_W, DEFAULT_SCREEN_H, 0x1000000, gxm_ms);
+    VitaIme_Init();
+    VitaButtons_Initialize();
+    G_ConfigureVitaMenuButtons();
     vglWaitVblankStart(GL_TRUE);
     // create a fake SDL window for events and shit
     sdl_window = SDL_CreateWindow(
-      PACKAGE_NAME " " PACKAGE_VERSION,
+      PACKAGE_NAME " " PACKAGE_DISPLAY_VERSION,
       SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
       REAL_SCREENWIDTH, REAL_SCREENHEIGHT,
       0);
@@ -1447,7 +1588,7 @@ void I_UpdateVideoMode(void)
     SDL_GL_SetAttribute( SDL_GL_STENCIL_SIZE, 8 );
 
     sdl_window = SDL_CreateWindow(
-      PACKAGE_NAME " " PACKAGE_VERSION,
+      PACKAGE_NAME " " PACKAGE_DISPLAY_VERSION,
       SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
       REAL_SCREENWIDTH, REAL_SCREENHEIGHT,
       init_flags);
@@ -1529,7 +1670,7 @@ void I_UpdateVideoMode(void)
     buffer->pixels = sw_texptr;
 #else
     sdl_window = SDL_CreateWindow(
-      PACKAGE_NAME " " PACKAGE_VERSION,
+      PACKAGE_NAME " " PACKAGE_DISPLAY_VERSION,
       SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
       REAL_SCREENWIDTH, REAL_SCREENHEIGHT,
       init_flags);
@@ -1589,10 +1730,23 @@ void I_UpdateVideoMode(void)
 
     // Get the info needed to render to the display
 #ifdef __vita__
-    if (1)
+    {
+      int i;
+      const int depth = V_GetPixelDepth();
+
+      for (i = 0; i < NUM_SCREENS; i++)
+      {
+        screens[i].not_on_heap = false;
+        screens[i].data = NULL;
+        screens[i].width = SCREENWIDTH;
+        screens[i].height = SCREENHEIGHT;
+        screens[i].byte_pitch = SCREENHEIGHT * depth;
+        screens[i].short_pitch = SCREENHEIGHT;
+        screens[i].int_pitch = SCREENHEIGHT;
+      }
+    }
 #else
     if (screen_multiply==1 && !SDL_MUSTLOCK(screen))
-#endif
     {
       screens[0].not_on_heap = true;
       screens[0].data = (unsigned char *) (screen->pixels);
@@ -1604,6 +1758,7 @@ void I_UpdateVideoMode(void)
     {
       screens[0].not_on_heap = false;
     }
+#endif
 
     V_AllocScreens();
 

@@ -13,6 +13,7 @@ enum ConfigVarTypes
 void CFG_Free(void);
 int CFG_Load(void);
 int CFG_Save(void);
+int CFG_EnsureInt(const char *name, int value);
 
 int CFG_ReadVar(int profile, const char *name, void *dst);
 int CFG_WriteVar(int profile, const char *name, void *src);

@@ -608,7 +608,7 @@ floater:
 
         mo->player->deltaviewheight = mo->momz>>3;
         //e6y: compatibility optioned
-        if (default_comp[comp_sound] || (mo->health>0)) /* cph - prevent "oof" when dead */
+        if (comp[comp_sound] || (mo->health>0)) /* cph - prevent "oof" when dead */
     S_StartSound (mo, sfx_oof);
       }
   }
@@ -999,11 +999,7 @@ void P_RemoveMobj (mobj_t* mobj)
 
   // stop any playing sound
 
-  // [FG] removed map objects may finish their sounds
-  if (full_sounds)
-    S_UnlinkSound(mobj);
-  else
-    S_StopSound (mobj);
+  S_StopSound (mobj);
 
   // killough 11/98:
   //

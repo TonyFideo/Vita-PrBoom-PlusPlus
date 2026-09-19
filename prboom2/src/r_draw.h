@@ -154,6 +154,12 @@ R_DrawSpan_f R_GetDrawSpanFunc(enum draw_filter_type_e filter,
                                enum draw_filter_type_e filterz);
 void R_DrawSpan(draw_span_vars_t *dsvars);
 
+/* Point-sampled plane drawing for the Vita transposed software framebuffer. */
+void R_DrawPlaneColumn(int x, int y1, int y2, const byte *source,
+                       const fixed_t *xbase, const fixed_t *ybase,
+                       const fixed_t *xstep, const fixed_t *ystep,
+                       const lighttable_t *const *colormap);
+
 void R_InitBuffer(int width, int height);
 
 void R_InitBuffersRes(void);

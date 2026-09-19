@@ -104,6 +104,13 @@ static fixed_t basexscale, baseyscale;
 static fixed_t *cachedheight = NULL;
 static fixed_t xoffs,yoffs;    // killough 2/28/98: flat offsets
 
+/* Per-row mapping values used by the Vita transposed plane path. */
+static fixed_t *column_xbase = NULL;
+static fixed_t *column_ybase = NULL;
+static fixed_t *column_xstep = NULL;
+static fixed_t *column_ystep = NULL;
+static const lighttable_t **column_colormap = NULL;
+
 // e6y: resolution limitation is removed
 fixed_t *yslope = NULL;
 fixed_t *distscale = NULL;
@@ -116,6 +123,12 @@ void R_InitPlanesRes(void)
 
   if (cachedheight) free(cachedheight);
 
+  if (column_xbase) free(column_xbase);
+  if (column_ybase) free(column_ybase);
+  if (column_xstep) free(column_xstep);
+  if (column_ystep) free(column_ystep);
+  if (column_colormap) free(column_colormap);
+
   if (yslope) free(yslope);
   if (distscale) free(distscale);
 
@@ -124,6 +137,12 @@ void R_InitPlanesRes(void)
   spanstart = calloc(1, SCREENHEIGHT * sizeof(*spanstart));
 
   cachedheight = calloc(1, SCREENHEIGHT * sizeof(*cachedheight));
+
+  column_xbase = calloc(1, SCREENHEIGHT * sizeof(*column_xbase));
+  column_ybase = calloc(1, SCREENHEIGHT * sizeof(*column_ybase));
+  column_xstep = calloc(1, SCREENHEIGHT * sizeof(*column_xstep));
+  column_ystep = calloc(1, SCREENHEIGHT * sizeof(*column_ystep));
+  column_colormap = calloc(1, SCREENHEIGHT * sizeof(*column_colormap));
 
   yslope = calloc(1, SCREENHEIGHT * sizeof(*yslope));
   distscale = calloc(1, SCREENWIDTH * sizeof(*distscale));
@@ -385,6 +404,97 @@ static void R_MakeSpans(int x, unsigned int t1, unsigned int b1,
     spanstart[b2--] = x;
 }
 
+#if V_TRANSPOSED_SOFTWARE
+/*
+ * Draw a regular flat using one vertical walk per visible screen column.
+ * This is the useful part of the old experimental plane-column commits for
+ * the current PrBoom renderer: it matches R_MapPlane's fixed-point math and
+ * only replaces the final point-sampled span writes. Filtered spans keep the
+ * original path because their interpolation state is row-oriented.
+ */
+static void R_DrawPlaneColumns(const visplane_t *pl, const byte *source)
+{
+  int x, y;
+  int miny = SCREENHEIGHT;
+  int maxy = -1;
+
+  for (x = pl->minx; x <= pl->maxx; x++)
+  {
+    unsigned int top;
+    unsigned int bottom;
+
+    if (x < 0 || x >= SCREENWIDTH)
+      continue;
+
+    top = pl->top[x];
+    bottom = pl->bottom[x];
+    if (top == SHRT_MAX || top > bottom)
+      continue;
+
+    if ((int)top < miny)
+      miny = (int)top;
+    if ((int)bottom > maxy)
+      maxy = (int)bottom;
+  }
+
+  if (maxy < 0 || miny >= SCREENHEIGHT)
+    return;
+
+  if (miny < 0)
+    miny = 0;
+  if (maxy >= SCREENHEIGHT)
+    maxy = SCREENHEIGHT - 1;
+
+  for (y = miny; y <= maxy; y++)
+  {
+    int_64_t den;
+    fixed_t distance;
+    unsigned index;
+
+    column_colormap[y] = NULL;
+    if (centery == y)
+      continue;
+
+    den = (int_64_t)FRACUNIT * FRACUNIT * D_abs(centery - y);
+    distance = FixedMul(planeheight, yslope[y]);
+
+    column_xstep[y] = (fixed_t)((int_64_t)viewsin * planeheight * viewfocratio / den);
+    column_ystep[y] = (fixed_t)((int_64_t)viewcos * planeheight * viewfocratio / den);
+    column_xbase[y] = viewx + xoffs + FixedMul(viewcos, distance);
+    column_ybase[y] = -viewy + yoffs - FixedMul(viewsin, distance);
+
+    if (fixedcolormap)
+      column_colormap[y] = fixedcolormap;
+    else
+    {
+      index = distance >> LIGHTZSHIFT;
+      if (index >= MAXLIGHTZ)
+        index = MAXLIGHTZ - 1;
+      column_colormap[y] = planezlight[index];
+    }
+  }
+
+  for (x = pl->minx; x <= pl->maxx; x++)
+  {
+    unsigned int top;
+    unsigned int bottom;
+
+    if (x < 0 || x >= SCREENWIDTH)
+      continue;
+
+    top = pl->top[x];
+    bottom = pl->bottom[x];
+    if (top == SHRT_MAX || top > bottom)
+      continue;
+
+    R_DrawPlaneColumn(x, (int)top, (int)bottom, source,
+                      column_xbase, column_ybase,
+                      column_xstep, column_ystep,
+                      column_colormap);
+  }
+}
+#endif
+
 // New function, by Lee Killough
 
 static void R_DoDrawPlane(visplane_t *pl)
@@ -499,7 +609,8 @@ static void R_DoDrawPlane(visplane_t *pl)
       if(fixedcolormap)
         light = (255  >> LIGHTSEGSHIFT);
       else
-        light = (pl->lightlevel >> LIGHTSEGSHIFT) + (extralight * LIGHTBRIGHT);
+        light = (R_ApplyMinimumSectorLight(pl->lightlevel) >> LIGHTSEGSHIFT)
+              + (extralight * LIGHTBRIGHT);
 
       if(light >= LIGHTLEVELS)
         light = LIGHTLEVELS-1;
@@ -507,13 +618,24 @@ static void R_DoDrawPlane(visplane_t *pl)
       if(light < 0)
         light = 0;
 
-      stop = pl->maxx + 1;
       planezlight = zlight[light];
-      pl->top[pl->minx-1] = pl->top[stop] = SHRT_MAX; // dropoff overflow
+#if V_TRANSPOSED_SOFTWARE
+      if (V_GetMode() != VID_MODEGL &&
+          drawvars.filterfloor == RDRAW_FILTER_POINT &&
+          drawvars.filterz == RDRAW_FILTER_POINT)
+      {
+        R_DrawPlaneColumns(pl, dsvars.source);
+      }
+      else
+#endif
+      {
+        stop = pl->maxx + 1;
+        pl->top[pl->minx-1] = pl->top[stop] = SHRT_MAX; // dropoff overflow
 
-      for (x = pl->minx ; x <= stop ; x++)
-         R_MakeSpans(x,pl->top[x-1],pl->bottom[x-1],
-                     pl->top[x],pl->bottom[x], &dsvars);
+        for (x = pl->minx ; x <= stop ; x++)
+          R_MakeSpans(x,pl->top[x-1],pl->bottom[x-1],
+                      pl->top[x],pl->bottom[x], &dsvars);
+      }
 
       W_UnlockLumpNum(firstflat + flattranslation[pl->picnum]);
     }

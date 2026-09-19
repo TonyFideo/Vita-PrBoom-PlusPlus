@@ -13,6 +13,7 @@
 
 char fs_base_dir[MAX_FNAME];
 char fs_pwad_dir[MAX_FNAME];
+char fs_demo_dir[MAX_FNAME];
 char fs_temp_dir[MAX_FNAME];
 char fs_iwad_dir[MAX_FNAME];
 
@@ -91,11 +92,13 @@ int FS_Init(void)
     char fpath[MAX_FNAME];
 
     snprintf(fs_pwad_dir, sizeof(fs_pwad_dir), "%s/pwads", FS_GetBaseDir());
+    snprintf(fs_demo_dir, sizeof(fs_demo_dir), "%s/demos", FS_GetBaseDir());
     snprintf(fs_iwad_dir, sizeof(fs_iwad_dir), "%s/iwads", FS_GetBaseDir());
     snprintf(fs_temp_dir, sizeof(fs_temp_dir), "%s/tmp", FS_GetBaseDir());
 
     mkdir(FS_GetBaseDir(), 0755);
     mkdir(fs_pwad_dir, 0755);
+    mkdir(fs_demo_dir, 0755);
     mkdir(fs_temp_dir, 0755);
 
     if (FS_LoadProfiles() < 0) return -1;
@@ -263,10 +266,12 @@ int FS_LoadProfiles(void)
         {
             prof.log_advanced = (value[0] == '1');
         }
+#ifdef HAVE_PROFILING
         else if (!strcmp(key, "logprofiling"))
         {
             prof.log_profiling = (value[0] == '1');
         }
+#endif
         else if (!strcmp(key, "logrender"))
         {
             prof.log_render = (value[0] == '1');
@@ -315,7 +320,9 @@ int FS_SaveProfiles(void)
         if (fs_profiles[i].nodeh) fprintf(f, "  nodeh 1\n");
         if (fs_profiles[i].logfile) fprintf(f, "  logfile 1\n");
         if (fs_profiles[i].log_advanced) fprintf(f, "  logadvanced 1\n");
+#ifdef HAVE_PROFILING
         if (fs_profiles[i].log_profiling) fprintf(f, "  logprofiling 1\n");
+#endif
         if (fs_profiles[i].log_render) fprintf(f, "  logrender 1\n");
         for (int j = 0; j < MAX_FILES; ++j)
         {
@@ -412,9 +419,9 @@ static void WriteResponseFile(int profile, const char *fname)
         fprintf(f, "-fast\n-respawn\n");
 
     if (g->record)
-        fprintf(f, "-record %s/mydemo\n", fs_temp_dir);
+        fprintf(f, "-record %s/mydemo\n", fs_demo_dir);
     else if (g->demo[0])
-        fprintf(f, "-playdemo %s\n", g->demo);
+        fprintf(f, "-playdemo %s/%s\n", fs_demo_dir, g->demo);
 
     /* The existing Debug logging option owns the legacy -logfile switch.
        The other switches are independent categories and are consumed by the
@@ -423,8 +430,10 @@ static void WriteResponseFile(int profile, const char *fname)
         fprintf(f, "-logfile\n");
     if (g->log_advanced)
         fprintf(f, "-logadvanced\n");
+#ifdef HAVE_PROFILING
     if (g->log_profiling)
         fprintf(f, "-logprofiling\n");
+#endif
     if (g->log_render)
         fprintf(f, "-logrender\n");
 

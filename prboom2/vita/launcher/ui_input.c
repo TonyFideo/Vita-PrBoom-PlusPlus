@@ -57,7 +57,7 @@ static struct Option input_opts[] =
         .choice =
         {
             joy_axis_labels, joy_axis_values,
-            5, 4,
+            5, 0,
         },
     },
 };

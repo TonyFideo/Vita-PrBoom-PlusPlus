@@ -53,6 +53,10 @@
 #include "st_stuff.h"
 #include "e6y.h"
 
+#ifdef __vita__
+#include "m_misc.h"
+#endif
+
 // DWF 2012-05-10
 // SetRatio sets the following global variables based on window geometry and
 // user preferences. The integer ratio is hardly used anymore, so further
@@ -68,6 +72,10 @@ const char *render_stretch_list[patch_stretch_max] = {"not adjusted", "Doom form
 stretch_param_t stretch_params_table[3][VPT_ALIGN_MAX];
 stretch_param_t *stretch_params;
 
+stretch_param_t page_stretch_params_table[PAGE_STRETCH_MAX][VPT_ALIGN_MAX];
+int page_stretch_active;
+int page_stretch_mode;
+
 cb_video_t video;
 cb_video_t video_stretch;
 cb_video_t video_full;
@@ -79,8 +87,51 @@ int render_stretch_hud_default;
 int render_patches_scalex;
 int render_patches_scaley;
 
+stretch_param_t *V_GetStretchParams(enum patch_translation_e flags)
+{
+  if (page_stretch_active)
+    return &page_stretch_params_table[page_stretch_mode][flags & VPT_ALIGN_MASK];
+
+  return &stretch_params[flags & VPT_ALIGN_MASK];
+}
+
+void V_BeginPageStretch(void)
+{
+  switch (render_screen_multiply)
+  {
+  case VID_SCALE_ASPECT:
+    page_stretch_mode = PAGE_STRETCH_ASPECT;
+    break;
+  case VID_SCALE_FULL:
+    page_stretch_mode = PAGE_STRETCH_FULL;
+    break;
+  case VID_SCALE_INT:
+  default:
+    /* Legacy positive factors also keep pages in their 4:3 layout. */
+    page_stretch_mode = PAGE_STRETCH_INTEGER;
+    break;
+  }
+
+  page_stretch_active = true;
+}
+
+void V_EndPageStretch(void)
+{
+  page_stretch_active = false;
+}
+
 // Each screen is [SCREENWIDTH*SCREENHEIGHT];
 screeninfo_t screens[NUM_SCREENS];
+
+/* Address one logical pixel in a software screen. */
+static inline byte *V_ScreenByteAddress(screeninfo_t *screen, int x, int y)
+{
+#if V_TRANSPOSED_SOFTWARE
+  return screen->data + x * screen->byte_pitch + y * V_GetPixelDepth();
+#else
+  return screen->data + y * screen->byte_pitch + x * V_GetPixelDepth();
+#endif
+}
 
 /* jff 4/24/98 initialize this at runtime */
 const byte *colrngs[CR_LIMIT];
@@ -255,7 +306,7 @@ static void FUNC_V_CopyRect(int srcscrn, int destscrn,
     int sx = x;
     int sy = y;
 
-    params = &stretch_params[flags & VPT_ALIGN_MASK];
+    params = V_GetStretchParams(flags);
 
     x  = params->video->x1lookup[x];
     y  = params->video->y1lookup[y];
@@ -292,17 +343,51 @@ static void FUNC_V_CopyRect(int srcscrn, int destscrn,
     return;
   }
 
-  src = screens[srcscrn].data + screens[srcscrn].byte_pitch * y + x * pixel_depth;
-  dest = screens[destscrn].data + screens[destscrn].byte_pitch * y + x * pixel_depth;
+#if V_TRANSPOSED_SOFTWARE
+  src = V_ScreenByteAddress(&screens[srcscrn], x, y);
+  dest = V_ScreenByteAddress(&screens[destscrn], x, y);
 
-  for ( ; height>0 ; height--)
-    {
-      memcpy (dest, src, width * pixel_depth);
-      src += screens[srcscrn].byte_pitch;
-      dest += screens[destscrn].byte_pitch;
-    }
+  for ( ; width > 0 ; width--)
+  {
+    memcpy(dest, src, height * pixel_depth);
+    src += screens[srcscrn].byte_pitch;
+    dest += screens[destscrn].byte_pitch;
+  }
+#else
+  src = V_ScreenByteAddress(&screens[srcscrn], x, y);
+  dest = V_ScreenByteAddress(&screens[destscrn], x, y);
+
+  for ( ; height > 0 ; height--)
+  {
+    memcpy(dest, src, width * pixel_depth);
+    src += screens[srcscrn].byte_pitch;
+    dest += screens[destscrn].byte_pitch;
+  }
+#endif
 }
 
+#if V_TRANSPOSED_SOFTWARE
+#define FILL_FLAT(dest_type, dest_pitch, pal_func) \
+{ \
+  const byte *src; \
+  dest_type *dest; \
+  for (sx = x; sx < x + width; sx += 64) \
+  { \
+    w = (x + width - sx < 64 ? x + width - sx : 64); \
+    for (sy = y; sy < y + height; sy += 64) \
+    { \
+      h = (y + height - sy < 64 ? y + height - sy : 64); \
+      src = data + 64 * ((sy - y) % 64); \
+      for (i = 0; i < w; i++) \
+      { \
+        dest = (dest_type *)screens[scrn].data + dest_pitch * (sx + i) + sy; \
+        for (j = 0; j < h; j++) \
+          dest[j] = pal_func(src[i + j * 64], VID_COLORWEIGHTMASK); \
+      } \
+    } \
+  } \
+}
+#else
 #define FILL_FLAT(dest_type, dest_pitch, pal_func)\
 {\
   const byte *src, *src_p;\
@@ -329,7 +414,8 @@ static void FUNC_V_CopyRect(int srcscrn, int destscrn,
       dest += 64;\
     }\
   }\
-}\
+}
+#endif
 
 static void FUNC_V_FillFlat(int lump, int scrn, int x, int y, int width, int height, enum patch_translation_e flags)
 {
@@ -344,6 +430,26 @@ static void FUNC_V_FillFlat(int lump, int scrn, int x, int y, int width, int hei
   data = W_CacheLumpNum(lump);
 
   if (V_GetMode() == VID_MODE8) {
+#if V_TRANSPOSED_SOFTWARE
+    byte *dest;
+
+    for (sx = x; sx < x + width; sx += 64)
+    {
+      w = (x + width - sx < 64 ? x + width - sx : 64);
+      for (sy = y; sy < y + height; sy += 64)
+      {
+        h = (y + height - sy < 64 ? y + height - sy : 64);
+        const byte *src = data + 64 * ((sy - y) % 64);
+
+        for (i = 0; i < w; i++)
+        {
+          dest = screens[scrn].data + screens[scrn].byte_pitch * (sx + i) + sy;
+          for (j = 0; j < h; j++)
+            dest[j] = src[i + j * 64];
+        }
+      }
+    }
+#else
     const byte *src, *src_p;
     byte *dest, *dest_p;
     pitch = screens[scrn].byte_pitch;
@@ -367,6 +473,7 @@ static void FUNC_V_FillFlat(int lump, int scrn, int x, int y, int width, int hei
         dest += 64;
       }
     }
+#endif
   } else if (V_GetMode() == VID_MODE15) {
     pitch = screens[scrn].short_pitch;
     FILL_FLAT(unsigned short, pitch, VID_PAL15);
@@ -466,7 +573,7 @@ static void V_DrawMemPatch(int x, int y, int scrn, const rpatch_t *patch,
     flags &= ~VPT_STRETCH_MASK;
 
   // e6y: wide-res
-  params = &stretch_params[flags & VPT_ALIGN_MASK];
+  params = V_GetStretchParams(flags);
 
   // CPhipps - null translation pointer => no translation
   if (!trans)
@@ -477,6 +584,67 @@ static void V_DrawMemPatch(int x, int y, int scrn, const rpatch_t *patch,
     x -= (patch->width - 320) / 2;
 
   if (V_GetMode() == VID_MODE8 && !(flags & VPT_STRETCH_MASK)) {
+#if V_TRANSPOSED_SOFTWARE
+    int             col;
+    byte           *desttop = V_ScreenByteAddress(&screens[scrn], x, y);
+    int    w = patch->width;
+
+    if (y<0 || y+patch->height > ((flags & VPT_STRETCH) ? 200 : SCREENHEIGHT)) {
+      lprintf(LO_WARN, "V_DrawMemPatch8: Patch (%d,%d)-(%d,%d) exceeds LFB in vertical direction (horizontal is clipped)\n"
+              "Bad V_DrawMemPatch8 (flags=%u)", x, y, x+patch->width, y+patch->height, flags);
+      return;
+    }
+
+    w--;
+
+    for (col=0 ; col<=w ; desttop += screens[scrn].byte_pitch, col++, x++) {
+      int i;
+      const int colindex = (flags & VPT_FLIP) ? (w - col) : col;
+      const rcolumn_t *column = R_GetPatchColumn(patch, colindex);
+
+      if (x < 0)
+        continue;
+      if (x >= SCREENWIDTH)
+        break;
+
+      for (i=0; i<column->numPosts; i++) {
+        const rpost_t *post = &column->posts[i];
+        const byte *source = column->pixels + post->topdelta;
+        byte *dest = desttop + post->topdelta;
+        int count = post->length;
+
+        if (!(flags & VPT_TRANS)) {
+          if ((count-=4)>=0)
+            do {
+              dest[0] = source[0];
+              dest[1] = source[1];
+              dest[2] = source[2];
+              dest[3] = source[3];
+              source += 4;
+              dest += 4;
+            } while ((count-=4)>=0);
+          if (count+=4)
+            do {
+              *dest++ = *source++;
+            } while (--count);
+        } else {
+          if ((count-=4)>=0)
+            do {
+              dest[0] = trans[source[0]];
+              dest[1] = trans[source[1]];
+              dest[2] = trans[source[2]];
+              dest[3] = trans[source[3]];
+              source += 4;
+              dest += 4;
+            } while ((count-=4)>=0);
+          if (count+=4)
+            do {
+              *dest++ = trans[*source++];
+            } while (--count);
+        }
+      }
+    }
+#else
     int             col;
     byte           *desttop = screens[scrn].data+y*screens[scrn].byte_pitch+x*V_GetPixelDepth();
     int    w = patch->width;
@@ -559,6 +727,7 @@ static void V_DrawMemPatch(int x, int y, int scrn, const rpatch_t *patch,
         }
       }
     }
+#endif
   }
   else {
     // CPhipps - move stretched patch drawing code here
@@ -762,6 +931,46 @@ static unsigned short *Palettes16 = NULL;
 static unsigned int *Palettes32 = NULL;
 static int currentPaletteIndex = 0;
 
+#ifdef __vita__
+void V_ApplyColorSaturation(byte *r, byte *g, byte *b)
+{
+  float saturation;
+  float gray;
+  float red;
+  float green;
+  float blue;
+
+  if (vita_color_saturation == 100)
+    return;
+
+  saturation = (float)vita_color_saturation / 100.0f;
+  if (saturation < 0.0f)
+    saturation = 0.0f;
+  if (saturation > 2.0f)
+    saturation = 2.0f;
+
+  red = (float)*r;
+  green = (float)*g;
+  blue = (float)*b;
+  gray = red * 0.2126f + green * 0.7152f + blue * 0.0722f;
+
+  red = gray + (red - gray) * saturation;
+  green = gray + (green - gray) * saturation;
+  blue = gray + (blue - gray) * saturation;
+
+  if (red < 0.0f) red = 0.0f;
+  if (red > 255.0f) red = 255.0f;
+  if (green < 0.0f) green = 0.0f;
+  if (green > 255.0f) green = 255.0f;
+  if (blue < 0.0f) blue = 0.0f;
+  if (blue > 255.0f) blue = 255.0f;
+
+  *r = (byte)(red + 0.5f);
+  *g = (byte)(green + 0.5f);
+  *b = (byte)(blue + 0.5f);
+}
+#endif
+
 //
 // V_UpdateTrueColorPalette
 //
@@ -785,8 +994,16 @@ void V_UpdateTrueColorPalette(video_mode_t mode) {
   int numPals = W_LumpLength(pplump) / (3*256);
   const float dontRoundAbove = 220;
   float roundUpR, roundUpG, roundUpB;
+
+#ifdef __vita__
+  static int colorSaturationOnLastPaletteGeneration = -1;
+#endif
   
-  if (usegammaOnLastPaletteGeneration != usegamma) {
+  if (usegammaOnLastPaletteGeneration != usegamma
+#ifdef __vita__
+      || colorSaturationOnLastPaletteGeneration != vita_color_saturation
+#endif
+      ) {
     if (Palettes15) free(Palettes15);
     if (Palettes16) free(Palettes16);
     if (Palettes32) free(Palettes32);
@@ -794,6 +1011,9 @@ void V_UpdateTrueColorPalette(video_mode_t mode) {
     Palettes16 = NULL;
     Palettes32 = NULL;
     usegammaOnLastPaletteGeneration = usegamma;      
+#ifdef __vita__
+    colorSaturationOnLastPaletteGeneration = vita_color_saturation;
+#endif
   }
   
   if (mode == VID_MODE32) {
@@ -805,6 +1025,9 @@ void V_UpdateTrueColorPalette(video_mode_t mode) {
           r = gtable[pal[(256*p+i)*3+0]];
           g = gtable[pal[(256*p+i)*3+1]];
           b = gtable[pal[(256*p+i)*3+2]];
+#ifdef __vita__
+          V_ApplyColorSaturation(&r, &g, &b);
+#endif
           
           // ideally, we should always round up, but very bright colors
           // overflow the blending adds, so they don't get rounded.
@@ -835,6 +1058,9 @@ void V_UpdateTrueColorPalette(video_mode_t mode) {
           r = gtable[pal[(256*p+i)*3+0]];
           g = gtable[pal[(256*p+i)*3+1]];
           b = gtable[pal[(256*p+i)*3+2]];
+#ifdef __vita__
+          V_ApplyColorSaturation(&r, &g, &b);
+#endif
           
           // ideally, we should always round up, but very bright colors
           // overflow the blending adds, so they don't get rounded.
@@ -865,6 +1091,9 @@ void V_UpdateTrueColorPalette(video_mode_t mode) {
           r = gtable[pal[(256*p+i)*3+0]];
           g = gtable[pal[(256*p+i)*3+1]];
           b = gtable[pal[(256*p+i)*3+2]];
+#ifdef __vita__
+          V_ApplyColorSaturation(&r, &g, &b);
+#endif
           
           // ideally, we should always round up, but very bright colors
           // overflow the blending adds, so they don't get rounded.
@@ -951,15 +1180,33 @@ void V_SetPalette(int pal)
 // CPhipps - New function to fill a rectangle with a given colour
 static void V_FillRect8(int scrn, int x, int y, int width, int height, byte colour)
 {
+#if V_TRANSPOSED_SOFTWARE
+  byte* dest = screens[scrn].data + x * screens[scrn].byte_pitch + y;
+  while (width--) {
+    memset(dest, colour, height);
+    dest += screens[scrn].byte_pitch;
+  }
+#else
   byte* dest = screens[scrn].data + x + y*screens[scrn].byte_pitch;
   while (height--) {
     memset(dest, colour, width);
     dest += screens[scrn].byte_pitch;
   }
+#endif
 }
 
 static void V_FillRect15(int scrn, int x, int y, int width, int height, byte colour)
 {
+#if V_TRANSPOSED_SOFTWARE
+  unsigned short* dest = (unsigned short *)screens[scrn].data + x * screens[scrn].short_pitch + y;
+  int h;
+  short c = VID_PAL15(colour, VID_COLORWEIGHTMASK);
+  while (width--) {
+    for (h=0; h<height; h++)
+      dest[h] = c;
+    dest += screens[scrn].short_pitch;
+  }
+#else
   unsigned short* dest = (unsigned short *)screens[scrn].data + x + y*screens[scrn].short_pitch;
   int w;
   short c = VID_PAL15(colour, VID_COLORWEIGHTMASK);
@@ -969,10 +1216,21 @@ static void V_FillRect15(int scrn, int x, int y, int width, int height, byte col
     }
     dest += screens[scrn].short_pitch;
   }
+#endif
 }
 
 static void V_FillRect16(int scrn, int x, int y, int width, int height, byte colour)
 {
+#if V_TRANSPOSED_SOFTWARE
+  unsigned short* dest = (unsigned short *)screens[scrn].data + x * screens[scrn].short_pitch + y;
+  int h;
+  short c = VID_PAL16(colour, VID_COLORWEIGHTMASK);
+  while (width--) {
+    for (h=0; h<height; h++)
+      dest[h] = c;
+    dest += screens[scrn].short_pitch;
+  }
+#else
   unsigned short* dest = (unsigned short *)screens[scrn].data + x + y*screens[scrn].short_pitch;
   int w;
   short c = VID_PAL16(colour, VID_COLORWEIGHTMASK);
@@ -982,10 +1240,21 @@ static void V_FillRect16(int scrn, int x, int y, int width, int height, byte col
     }
     dest += screens[scrn].short_pitch;
   }
+#endif
 }
 
 static void V_FillRect32(int scrn, int x, int y, int width, int height, byte colour)
 {
+#if V_TRANSPOSED_SOFTWARE
+  unsigned int* dest = (unsigned int *)screens[scrn].data + x * screens[scrn].int_pitch + y;
+  int h;
+  int c = VID_PAL32(colour, VID_COLORWEIGHTMASK);
+  while (width--) {
+    for (h=0; h<height; h++)
+      dest[h] = c;
+    dest += screens[scrn].int_pitch;
+  }
+#else
   unsigned int* dest = (unsigned int *)screens[scrn].data + x + y*screens[scrn].int_pitch;
   int w;
   int c = VID_PAL32(colour, VID_COLORWEIGHTMASK);
@@ -995,6 +1264,7 @@ static void V_FillRect32(int scrn, int x, int y, int width, int height, byte col
     }
     dest += screens[scrn].int_pitch;
   }
+#endif
 }
 
 static void WRAP_V_DrawLine(fline_t* fl, int color);
@@ -1211,10 +1481,18 @@ int V_GetPixelDepth(void) {
 // V_AllocScreen
 //
 void V_AllocScreen(screeninfo_t *scrn) {
+  int allocation_lines;
+
+#if V_TRANSPOSED_SOFTWARE
+  allocation_lines = scrn->width;
+#else
+  allocation_lines = scrn->height;
+#endif
+
   if (!scrn->not_on_heap)
-    if ((scrn->byte_pitch * scrn->height) > 0)
+    if ((scrn->byte_pitch * allocation_lines) > 0)
       //e6y: Clear the screen to black.
-      scrn->data = calloc(scrn->byte_pitch*scrn->height, 1);
+      scrn->data = calloc(scrn->byte_pitch * allocation_lines, 1);
 }
 
 //
@@ -1248,19 +1526,35 @@ void V_FreeScreens(void) {
 }
 
 static void V_PlotPixel8(int scrn, int x, int y, byte color) {
+#if V_TRANSPOSED_SOFTWARE
+  screens[scrn].data[x * screens[scrn].byte_pitch + y] = color;
+#else
   screens[scrn].data[x+screens[scrn].byte_pitch*y] = color;
+#endif
 }
 
 static void V_PlotPixel15(int scrn, int x, int y, byte color) {
+#if V_TRANSPOSED_SOFTWARE
+  ((unsigned short *)screens[scrn].data)[x * screens[scrn].short_pitch + y] = VID_PAL15(color, VID_COLORWEIGHTMASK);
+#else
   ((unsigned short *)screens[scrn].data)[x+screens[scrn].short_pitch*y] = VID_PAL15(color, VID_COLORWEIGHTMASK);
+#endif
 }
 
 static void V_PlotPixel16(int scrn, int x, int y, byte color) {
+#if V_TRANSPOSED_SOFTWARE
+  ((unsigned short *)screens[scrn].data)[x * screens[scrn].short_pitch + y] = VID_PAL16(color, VID_COLORWEIGHTMASK);
+#else
   ((unsigned short *)screens[scrn].data)[x+screens[scrn].short_pitch*y] = VID_PAL16(color, VID_COLORWEIGHTMASK);
+#endif
 }
 
 static void V_PlotPixel32(int scrn, int x, int y, byte color) {
+#if V_TRANSPOSED_SOFTWARE
+  ((unsigned int *)screens[scrn].data)[x * screens[scrn].int_pitch + y] = VID_PAL32(color, VID_COLORWEIGHTMASK);
+#else
   ((unsigned int *)screens[scrn].data)[x+screens[scrn].int_pitch*y] = VID_PAL32(color, VID_COLORWEIGHTMASK);
+#endif
 }
 
 #define PUTDOT(xx,yy,cc) V_PlotPixel(0,xx,yy,(byte)cc)
@@ -1372,7 +1666,7 @@ extern SDL_Surface *screen;
 //
 static void V_PlotPixelWu8(int scrn, int x, int y, byte color, int weight)
 {
-  unsigned int bg_color = screens[scrn].data[x+screens[scrn].byte_pitch*y];
+  unsigned int bg_color = V_ScreenByteAddress(&screens[scrn], x, y)[0];
   unsigned int *fg2rgb = Col2RGB8[weight];
   unsigned int *bg2rgb = Col2RGB8[64 - weight];
   unsigned int fg = fg2rgb[color];
@@ -1389,7 +1683,11 @@ static void V_PlotPixelWu15(int scrn, int x, int y, byte color, int weight)
   byte g = (*(rgb + 1) * weight) >> wu_weightbits;
   byte b = (*(rgb + 2) * weight) >> wu_weightbits;
   
+#if V_TRANSPOSED_SOFTWARE
+  ((unsigned short *)screens[scrn].data)[x * screens[scrn].short_pitch + y] =
+#else
   ((unsigned short *)screens[scrn].data)[x+screens[scrn].short_pitch*y] =
+#endif
     (unsigned short)RGB2COLOR(r, g, b);
 }
 static void V_PlotPixelWu16(int scrn, int x, int y, byte color, int weight)
@@ -1400,7 +1698,11 @@ static void V_PlotPixelWu16(int scrn, int x, int y, byte color, int weight)
   byte g = (*(rgb + 1) * weight) >> wu_weightbits;
   byte b = (*(rgb + 2) * weight) >> wu_weightbits;
   
+#if V_TRANSPOSED_SOFTWARE
+  ((unsigned short *)screens[scrn].data)[x * screens[scrn].short_pitch + y] =
+#else
   ((unsigned short *)screens[scrn].data)[x+screens[scrn].short_pitch*y] =
+#endif
     (unsigned short)RGB2COLOR(r, g, b);
 }
 static void V_PlotPixelWu32(int scrn, int x, int y, byte color, int weight)
@@ -1411,7 +1713,11 @@ static void V_PlotPixelWu32(int scrn, int x, int y, byte color, int weight)
   byte g = (*(rgb + 1) * weight) >> wu_weightbits;
   byte b = (*(rgb + 2) * weight) >> wu_weightbits;
   
+#if V_TRANSPOSED_SOFTWARE
+  ((unsigned int *)screens[scrn].data)[x * screens[scrn].int_pitch + y] =
+#else
   ((unsigned int *)screens[scrn].data)[x+screens[scrn].int_pitch*y] =
+#endif
     (unsigned int)RGB2COLOR(r, g, b);
 }
 
@@ -1546,13 +1852,25 @@ void V_FillBorder(int lump, byte color)
 {
   int bordtop, bordbottom, bordleft, bordright;
 
-  if (render_stretch_hud == patch_stretch_full)
-    return;
+  if (page_stretch_active)
+  {
+    stretch_param_t *params = V_GetStretchParams(VPT_STRETCH);
 
-  bordleft = wide_offsetx;
-  bordright = wide_offset2x - wide_offsetx;
-  bordtop = wide_offsety;
-  bordbottom = wide_offset2y - wide_offsety;
+    bordleft = params->deltax1;
+    bordtop = params->deltay1;
+    bordright = SCREENWIDTH - params->deltax1 - params->video->width;
+    bordbottom = SCREENHEIGHT - params->deltay1 - params->video->height;
+  }
+  else
+  {
+    if (render_stretch_hud == patch_stretch_full)
+      return;
+
+    bordleft = wide_offsetx;
+    bordright = wide_offset2x - wide_offsetx;
+    bordtop = wide_offsety;
+    bordbottom = wide_offset2y - wide_offsety;
+  }
 
   if (lump >= 0)
   {
@@ -1781,7 +2099,7 @@ void SetRatio(int width, int height)
 
 void V_GetWideRect(int *x, int *y, int *w, int *h, enum patch_translation_e flags)
 {
-  stretch_param_t *params = &stretch_params[flags & VPT_ALIGN_MASK];
+  stretch_param_t *params = V_GetStretchParams(flags);
   int sx = *x;
   int sy = *y;
 

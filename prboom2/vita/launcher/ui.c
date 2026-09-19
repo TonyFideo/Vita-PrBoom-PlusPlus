@@ -10,11 +10,11 @@
 #include <string.h>
 #include <vitasdk.h>
 
-#define SCROLL_SZ 12
+#define SCROLL_SZ 15
+#define TAB_GAP 20
 
 extern struct Menu ui_menu_main;
-extern struct Menu ui_menu_video;
-extern struct Menu ui_menu_audio;
+extern struct Menu ui_menu_video_audio;
 extern struct Menu ui_menu_input;
 extern struct Menu ui_menu_pwads;
 extern struct Menu ui_menu_misc;
@@ -23,8 +23,7 @@ extern struct Menu ui_menu_net;
 static struct Menu *ui_menus[MENU_COUNT] =
 {
     &ui_menu_main,
-    &ui_menu_video,
-    &ui_menu_audio,
+    &ui_menu_video_audio,
     &ui_menu_input,
     &ui_menu_pwads,
     &ui_menu_misc,
@@ -32,7 +31,7 @@ static struct Menu *ui_menus[MENU_COUNT] =
 };
 
 static int ui_tab_x[MENU_COUNT];
-static int ui_tab_w = 0;
+static float ui_tab_scale = 1.f;
 
 int ui_current_menu = MENU_MAIN;
 int ui_profile = -1;
@@ -53,6 +52,39 @@ struct FileDialog
 
 static int ui_file_select = 0;
 static struct FileDialog ui_fd;
+
+static void UI_LayoutTabs(void)
+{
+    int total_width;
+    int width;
+    int x;
+    float scale;
+
+    /* Keep the requested tab names, but fit their actual rendered widths
+       instead of assigning every tab the same fixed-width cell. */
+    scale = 1.f;
+    for (;;)
+    {
+        total_width = TAB_GAP * (MENU_COUNT - 1);
+        for (int i = 0; i < MENU_COUNT; ++i)
+            total_width += R_TextWidth(scale, ui_menus[i]->tabname);
+
+        if (total_width <= SCR_W || scale <= 0.5f)
+            break;
+
+        scale -= 0.05f;
+    }
+
+    ui_tab_scale = scale;
+    x = (SCR_W - total_width) / 2;
+
+    for (int i = 0; i < MENU_COUNT; ++i)
+    {
+        width = R_TextWidth(ui_tab_scale, ui_menus[i]->tabname);
+        ui_tab_x[i] = x + width / 2;
+        x += width + TAB_GAP;
+    }
+}
 
 static uint16_t ui_input_text[SCE_IME_DIALOG_MAX_TEXT_LENGTH + 1];
 static uint16_t ui_initial_text[SCE_IME_DIALOG_MAX_TEXT_LENGTH];
@@ -194,9 +226,9 @@ static void FileDialogUpdate(void)
     else if (ui_fd.sel >= ui_fd.scroll + SCROLL_SZ)
         ui_fd.scroll = ui_fd.sel - SCROLL_SZ + 1;
 
-    if (IN_ButtonPressed(B_CROSS))
+    if (IN_ConfirmPressed())
         FileDialogFinish(1);
-    else if (IN_ButtonPressed(B_CIRCLE))
+    else if (IN_BackPressed())
         FileDialogFinish(0);
 }
 
@@ -241,6 +273,7 @@ static void OptScroll(struct Option *opt, int dir)
             break;
 
         case OPT_CHOICE:
+        case OPT_INT_CHOICE:
             opt->choice.val += dir;
             if (opt->choice.val < 0) opt->choice.val = opt->choice.count - 1;
             else if (opt->choice.val >= opt->choice.count) opt->choice.val = 0;
@@ -314,6 +347,16 @@ static int OptIsVisible(struct Menu *menu, int index)
     return !opt->visible || opt->visible();
 }
 
+static int OptIsSelectable(struct Menu *menu, int index)
+{
+    struct Option *opt = menu->opts + index;
+
+    if (!OptIsVisible(menu, index))
+        return 0;
+
+    return opt->type != OPT_SECTION && opt->type != OPT_SEPARATOR;
+}
+
 static void OptSelectNext(struct Menu *menu, int dir)
 {
     int index = menu->sel;
@@ -324,7 +367,7 @@ static void OptSelectNext(struct Menu *menu, int dir)
         if (index < 0) index = menu->numopts - 1;
         else if (index >= menu->numopts) index = 0;
 
-        if (OptIsVisible(menu, index))
+        if (OptIsSelectable(menu, index))
         {
             menu->sel = index;
             return;
@@ -351,7 +394,7 @@ static void OptsUpdate(struct Menu *menu)
     else if (menu->sel >= menu->scroll + SCROLL_SZ)
         menu->scroll = menu->sel - SCROLL_SZ + 1;
 
-    if (IN_ButtonPressed(B_CROSS))
+    if (IN_ConfirmPressed())
         OptActivate(opts + menu->sel);
     else if (IN_ButtonPressed(B_DLEFT))
         OptScroll(opts + menu->sel, -1);
@@ -366,6 +409,15 @@ static void OptDraw(struct Option *opt, int x, int y, int sel)
     unsigned c = sel ? C_GREEN : C_WHITE;
     const char *tmp;
 
+    if (opt->type == OPT_SEPARATOR)
+        return;
+
+    if (opt->type == OPT_SECTION)
+    {
+        R_Print(0, x, y, C_YELLOW, "%s", opt->name);
+        return;
+    }
+
     R_Print(0, x, y, c, opt->name);
 
     x += 640;
@@ -377,6 +429,7 @@ static void OptDraw(struct Option *opt, int x, int y, int sel)
             break;
 
         case OPT_CHOICE:
+        case OPT_INT_CHOICE:
             R_Print(P_ARIGHT, x, y, c, opt->choice.names[opt->choice.val]);
             break;
 
@@ -427,10 +480,11 @@ static void OptsDraw(struct Menu *menu)
     int scroll = menu->scroll;
     int stop = scroll + SCROLL_SZ;
 
-    if (scroll > 0)
-        R_Print(0, 160, 160 - 24, C_LTGREY, "...");
+    int y = 128;
 
-    int y = 160;
+    if (scroll > 0)
+        R_Print(0, 160, y - 24, C_LTGREY, "...");
+
     for (int i = scroll; i < numopts && i < stop; ++i)
     {
         if (!OptIsVisible(menu, i))
@@ -497,6 +551,28 @@ static void OptLoadVar(struct Option *opt)
                 }
             }
             break;
+
+        case OPT_INT_CHOICE:
+        {
+            int value;
+
+            if (opt->codevar)
+                memcpy(&value, opt->codevar, sizeof(value));
+            else
+                CFG_ReadVar(ui_profile, opt->cfgvar, &value);
+
+            /* Keep an unknown value on the safe, default entry. */
+            opt->choice.val = 0;
+            for (itmp = 0; itmp < opt->choice.count; ++itmp)
+            {
+                if (atoi(opt->choice.values[itmp]) == value)
+                {
+                    opt->choice.val = itmp;
+                    break;
+                }
+            }
+            break;
+        }
 
         case OPT_INTEGER:
             if (opt->codevar)
@@ -585,6 +661,17 @@ static void OptWriteVar(struct Option *opt)
             }
             break;
 
+        case OPT_INT_CHOICE:
+        {
+            int value = atoi(opt->choice.values[opt->choice.val]);
+
+            if (opt->codevar)
+                memcpy(opt->codevar, &value, sizeof(value));
+            else
+                CFG_WriteVar(ui_profile, opt->cfgvar, &value);
+            break;
+        }
+
         case OPT_INTEGER:
             if (opt->codevar)
                 memcpy(opt->codevar, &opt->inum.val, sizeof(int));
@@ -634,6 +721,16 @@ static void OptsReload(struct Menu *menu)
 
     for (int i = 0; i < numopts; ++i)
         OptLoadVar(opts + i);
+
+    /* A combined screen can start with a non-selectable category header. */
+    for (int i = 0; i < numopts; ++i)
+    {
+        if (OptIsSelectable(menu, i))
+        {
+            menu->sel = i;
+            break;
+        }
+    }
 }
 
 static void OptsWrite(struct Menu *menu)
@@ -649,15 +746,14 @@ static void OptsWrite(struct Menu *menu)
 
 int UI_Init(void)
 {
-    ui_tab_w = SCR_W / MENU_COUNT;
-
     for (int i = 0; i < MENU_COUNT; ++i)
     {
         if (ui_menus[i]->opts)
             OptsReload(ui_menus[i]);
         ui_menus[i]->init();
-        ui_tab_x[i] = (ui_tab_w / 2) + ui_tab_w * i;
     }
+
+    UI_LayoutTabs();
 
     return 0;
 }
@@ -694,7 +790,7 @@ int UI_Update(void)
         return 0;
     }
 
-    if (IN_ButtonPressed(B_CIRCLE))
+    if (IN_BackPressed())
     {
         UI_SaveOptions();
         return 1;
@@ -750,7 +846,8 @@ void UI_Draw(void)
     for (int i = 0; i < MENU_COUNT; ++i)
     {
         unsigned c = (ui_current_menu == i) ? C_GREEN : C_WHITE;
-        R_Print(P_XCENTER, ui_tab_x[i], 24, c, ui_menus[i]->tabname);
+        R_PrintScaled(P_XCENTER, ui_tab_x[i], 24, ui_tab_scale, c,
+                      "%s", ui_menus[i]->tabname);
     }
 
     R_DrawLine(0, 40, SCR_W, 40, C_LTGREY);

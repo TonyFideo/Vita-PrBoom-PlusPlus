@@ -11,13 +11,21 @@ IF (FLUIDSYNTH_INCLUDE_DIR AND FLUIDSYNTH_LIBRARIES)
   SET(FluidSynth_FIND_QUIETLY TRUE)
 ENDIF (FLUIDSYNTH_INCLUDE_DIR AND FLUIDSYNTH_LIBRARIES)
 
-FIND_PATH(FLUIDSYNTH_INCLUDE_DIR fluidsynth.h)
+# VitaSDK installs the public headers below an extra `fluidsynth/` directory,
+# while desktop installations commonly put fluidsynth.h directly in the
+# include directory.  Keep both layouts supported so the feature is detected
+# instead of silently compiling the disabled player stub.
+FIND_PATH(FLUIDSYNTH_INCLUDE_DIR
+    NAMES fluidsynth.h
+    PATH_SUFFIXES fluidsynth
+)
 
 FIND_LIBRARY(FLUIDSYNTH_LIBRARIES NAMES fluidsynth )
 MARK_AS_ADVANCED( FLUIDSYNTH_LIBRARIES FLUIDSYNTH_INCLUDE_DIR )
+
+SET(FLUIDSYNTH_INCLUDE_DIRS ${FLUIDSYNTH_INCLUDE_DIR})
 
 # handle the QUIETLY and REQUIRED arguments and set FLUIDSYNTH_FOUND to TRUE if 
 # all listed variables are TRUE
 INCLUDE(FindPackageHandleStandardArgs)
 FIND_PACKAGE_HANDLE_STANDARD_ARGS(FluidSynth DEFAULT_MSG FLUIDSYNTH_LIBRARIES FLUIDSYNTH_INCLUDE_DIR)
-

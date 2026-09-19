@@ -14,15 +14,15 @@ static void DoJoinNet(int);
 
 static struct Option net_opts[] =
 {
-    { OPT_STRING, "Game address" },
-    { OPT_CALLBACK, "Connect to address", .cb = DoJoinNet },
+    { OPT_STRING, "Server IP address" },
+    { OPT_CALLBACK, "Connect to server", .cb = DoJoinNet },
 };
 
 struct Menu ui_menu_net =
 {
     MENU_PWADS,
-    "Net",
-    "Network game settings",
+    "Multiplayer",
+    "Multiplayer settings",
     NULL, 0, 0, 0,
     UI_MenuNet_Init,
     UI_MenuNet_Update,

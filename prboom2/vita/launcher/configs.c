@@ -211,6 +211,27 @@ static struct ConfigVar *FindVar(int profile, const char *name)
     return NULL;
 }
 
+int CFG_EnsureInt(const char *name, int value)
+{
+    if (FindVar(0, name))
+        return 0;
+
+    struct ConfigVar *cvars = realloc(
+        cfg_main.cvars,
+        sizeof(struct ConfigVar) * (cfg_main.numcvars + 1));
+    if (!cvars)
+        return 1;
+
+    cfg_main.cvars = cvars;
+    struct ConfigVar *cvar = cfg_main.cvars + cfg_main.numcvars++;
+    memset(cvar, 0, sizeof(*cvar));
+    cvar->type = CVAR_INTEGER;
+    strncpy(cvar->name, name, sizeof(cvar->name) - 1);
+    cvar->ival = value;
+    cfg_main.modified = 1;
+    return 0;
+}
+
 int CFG_ReadVar(int profile, const char *name, void *dst)
 {
     struct ConfigVar *cvar = FindVar(profile, name);

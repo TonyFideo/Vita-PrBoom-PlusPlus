@@ -67,6 +67,11 @@
 #include "r_fps.h"
 #include "e6y.h"//e6y
 #include "m_io.h"
+#ifdef __vita__
+#include <psp2/libime.h>
+#include <psp2/touch.h>
+#include "vita_ime.h"
+#endif
 #ifdef _WIN32
 #include "e6y_launcher.h"
 #endif
@@ -147,6 +152,18 @@ int saveSlot;        // which slot to save in
 int saveCharIndex;   // which char we're editing
 // old save description before edit
 char saveOldString[SAVESTRINGSIZE];
+
+#ifdef __vita__
+/* At 35 Hz this is about 286 ms: a second confirm is treated as a quick
+   save, while a single confirm gets time to open the Vita IME. */
+#define VITA_SAVE_DOUBLE_PRESS_TICS 10
+static dboolean vita_save_ime_waiting;
+static int vita_save_ime_deadline;
+static dboolean vita_save_ime_edit;
+/* Do not feed the control/contact that closes the IME back into the menu. */
+static dboolean vita_ime_ignore_confirm;
+static dboolean vita_ime_touch_release_pending;
+#endif
 
 dboolean inhelpscreens; // indicates we are in or just left a help screen
 
@@ -307,6 +324,10 @@ void M_ChangeTextureParams(void);
 void M_General(int);      // killough 10/98
 void M_DrawCompat(void);  // killough 10/98
 void M_DrawGeneral(void); // killough 10/98
+#ifdef __vita__
+void M_VitaFeatures(int choice);
+void M_DrawVitaFeatures(void);
+#endif
 void M_ChangeFullScreen(void);
 void M_ChangeVideoMode(void);
 void M_ChangeUseGLSurface(void);
@@ -1077,6 +1098,13 @@ void M_SaveSelect(int choice)
     SetDefaultSaveName(choice);
   }
   saveCharIndex = strlen(savegamestrings[choice]);
+
+#ifdef __vita__
+  /* Delay the IME so two quick confirms can save using the generated name. */
+  vita_save_ime_waiting = true;
+  vita_save_ime_deadline = I_GetTime() + VITA_SAVE_DOUBLE_PRESS_TICS;
+  vita_save_ime_edit = false;
+#endif
 }
 
 //
@@ -1112,6 +1140,9 @@ enum
   general, // killough 10/98
   // killough 4/6/98: move setup to be a sub-menu of OPTIONs
   setup,                                                    // phares 3/21/98
+#ifdef __vita__
+  vita_features,
+#endif
   endgame,
   messages,
   /*    detail, obsolete -- killough */
@@ -1130,12 +1161,16 @@ menuitem_t OptionsMenu[]=
   // killough 4/6/98: move setup to be a sub-menu of OPTIONs
   {1,"M_GENERL", M_General, 'g', "GENERAL"},      // killough 10/98
   {1,"M_SETUP",  M_Setup,   's', "SETUP"},        // phares 3/21/98
+#ifdef __vita__
+  /* This item is drawn as text below so it does not require a new WAD lump. */
+  {1,"",         M_VitaFeatures, 'v', "VITA FEATURES"},
+#endif
   {1,"M_ENDGAM", M_EndGame,'e',  "END GAME"},
   {1,"M_MESSG",  M_ChangeMessages,'m', "MESSAGES:"},
   /*    {1,"M_DETAIL",  M_ChangeDetail,'g'},  unused -- killough */
   {2,"M_SCRNSZ", M_SizeDisplay,'s', "SCREEN SIZE"},
   {-1,"",0},
-  {1,"M_MSENS",  M_ChangeSensitivity,'m', "MOUSE SENSITIVITY"},
+  {1,"M_MSENS",  M_ChangeSensitivity,'m', "CAMERA SENSITIVITY"},
   /* {-1,"",0},  replaced with submenu -- killough */
   {1,"M_SVOL",   M_Sound,'s', "SOUND VOLUME"},
 };
@@ -1177,6 +1212,14 @@ void M_DrawOptions(void)
 
   M_DrawThermo(OptionsDef.x,OptionsDef.y+LINEHEIGHT*(scrnsize+1),
    9,screenSize);
+
+#ifdef __vita__
+  /* Keep the new parent-menu item independent of a M_VITAFE patch. */
+  M_WriteText(OptionsDef.x,
+    OptionsDef.y + LINEHEIGHT*vita_features + 8 -
+      (M_StringHeight("VITA FEATURES")/2),
+    "VITA FEATURES", CR_DEFAULT);
+#endif
 }
 
 void M_Options(int choice)
@@ -1216,7 +1259,7 @@ static void M_QuitResponse(int ch)
 {
   if (ch != 'y')
     return;
-  
+
   //e6y: Optional removal of a quit sound
   if ((!netgame && showendoom) // killough 12/98
       && !nosfxparm && snd_card) // avoid delay if no sound card
@@ -1348,10 +1391,10 @@ void M_MusicVol(int choice)
 
 /////////////////////////////
 //
-// MOUSE SENSITIVITY MENU -- killough
+// CAMERA SENSITIVITY MENU -- killough
 //
 
-// numerical values for the Mouse Sensitivity menu items
+// numerical values for the Camera Sensitivity menu items
 // The 'empty' slots are where the sliding scales appear.
 
 enum
@@ -1370,7 +1413,7 @@ enum
   mouse_end
 } mouse_e;
 
-// The definitions of the Mouse Sensitivity menu
+// The definitions of the Camera Sensitivity menu
 
 menuitem_t MouseMenu[]=
 {
@@ -1403,15 +1446,17 @@ menu_t MouseDef =
 #define MOUSE_SENS_MAX 100
 
 //
-// Change Mouse Sensitivities -- killough
+// Change Camera Sensitivities -- killough
 //
 
 void M_DrawMouse(void)
 {
   int mhmx,mvmx; /* jff 4/3/98 clamp drawn position    99max mead */
 
-  // CPhipps - patch drawing updated
-  V_DrawNamePatch(60, 15, 0, "M_MSENS", CR_DEFAULT, VPT_STRETCH);//e6y
+  /* The original M_MSENS patch has a fixed "MOUSE SENSITIVITY" label.
+     Draw the Vita/modernized camera label from the menu font instead so the
+     visible title matches the option name even when the IWAD patch exists. */
+  M_DrawStringCentered(160, 15, CR_GOLD, "CAMERA SENSITIVITY");
 
   //jff 4/3/98 clamp horizontal sensitivity display
   mhmx = mouseSensitivity_horiz>99? 99 : mouseSensitivity_horiz; /*mead*/
@@ -1883,6 +1928,18 @@ menu_t GeneralDef =                                           // killough 10/98
   0
 };
 
+#ifdef __vita__
+menu_t VitaFeaturesDef =
+{
+  generic_setup_end,
+  &OptionsDef,
+  Generic_Setup,
+  M_DrawVitaFeatures,
+  34,5,
+  0
+};
+#endif
+
 menu_t CompatDef =                                           // killough 10/98
 {
   generic_setup_end,
@@ -2022,6 +2079,147 @@ static void M_DrawItem(const setup_menu_t* s)
 int  gather_count;
 char gather_buffer[MAXGATHER+1];  // killough 10/98: make input character-based
 
+#ifdef __vita__
+// The Vita dark-sector boost is intentionally a compact slider. The value is
+// a percentage: 0 leaves the original light level unchanged and 50 increases
+// light levels by half at or below the fixed 128 cutoff.
+#define VITA_LIGHT_SLIDER_MIN        0
+#define VITA_LIGHT_SLIDER_MAX       50
+#define VITA_LIGHT_SLIDER_STEP       5
+#define VITA_LIGHT_SLIDER_STEPS     11
+#define VITA_LIGHT_SLIDER_TRACK      52
+#define VITA_LIGHT_SLIDER_KNOB        4
+
+static int M_VitaLightSliderPosition(int value)
+{
+  if (value <= VITA_LIGHT_SLIDER_MIN)
+    return 0;
+  if (value >= VITA_LIGHT_SLIDER_MAX)
+    return VITA_LIGHT_SLIDER_STEPS - 1;
+
+  // Normalize old/manual config values to the nearest five-percent stop.
+  return (value + VITA_LIGHT_SLIDER_STEP / 2) / VITA_LIGHT_SLIDER_STEP;
+}
+
+static int M_VitaLightSliderValue(int position)
+{
+  if (position <= 0)
+    return VITA_LIGHT_SLIDER_MIN;
+  if (position >= VITA_LIGHT_SLIDER_STEPS - 1)
+    return VITA_LIGHT_SLIDER_MAX;
+
+  return position * VITA_LIGHT_SLIDER_STEP;
+}
+
+#define VITA_PERCENT_SLIDER_MIN        0
+#define VITA_PERCENT_SLIDER_MAX      100
+#define VITA_PERCENT_SLIDER_STEP       1
+#define VITA_PERCENT_SLIDER_STEPS    101
+
+static int M_VitaPercentSliderPosition(int value)
+{
+  if (value <= VITA_PERCENT_SLIDER_MIN)
+    return 0;
+  if (value >= VITA_PERCENT_SLIDER_MAX)
+    return VITA_PERCENT_SLIDER_STEPS - 1;
+
+  return (value - VITA_PERCENT_SLIDER_MIN +
+          VITA_PERCENT_SLIDER_STEP / 2) / VITA_PERCENT_SLIDER_STEP;
+}
+
+static int M_VitaPercentSliderValue(int position)
+{
+  if (position <= 0)
+    return VITA_PERCENT_SLIDER_MIN;
+  if (position >= VITA_PERCENT_SLIDER_STEPS - 1)
+    return VITA_PERCENT_SLIDER_MAX;
+
+  return VITA_PERCENT_SLIDER_MIN + position * VITA_PERCENT_SLIDER_STEP;
+}
+
+static int M_VitaSliderPosition(const setup_menu_t *item, int value)
+{
+  if (item->m_flags & S_VITA_PERCENT_SLIDER)
+    return M_VitaPercentSliderPosition(value);
+  return M_VitaLightSliderPosition(value);
+}
+
+static int M_VitaSliderValue(const setup_menu_t *item, int position)
+{
+  if (item->m_flags & S_VITA_PERCENT_SLIDER)
+    return M_VitaPercentSliderValue(position);
+  return M_VitaLightSliderValue(position);
+}
+
+static int M_VitaSliderSteps(const setup_menu_t *item)
+{
+  if (item->m_flags & S_VITA_PERCENT_SLIDER)
+    return VITA_PERCENT_SLIDER_STEPS;
+  return VITA_LIGHT_SLIDER_STEPS;
+}
+
+static void M_DrawVitaLightSlider(const setup_menu_t* s, int color)
+{
+  int x = s->m_x;
+  int y = s->m_y;
+  int position = M_VitaLightSliderPosition(*s->var.def->location.pi);
+  int value = M_VitaLightSliderValue(position);
+  int knob_x;
+  int xx, yy, ww, hh;
+
+  // Keep the bar in the value column and reserve the remaining space for the
+  // numeric percentage. This fits the original 320-wide setup menu layout.
+  knob_x = x + (position * (VITA_LIGHT_SLIDER_TRACK - VITA_LIGHT_SLIDER_KNOB)
+                + (VITA_LIGHT_SLIDER_STEPS - 2) / 2)
+               / (VITA_LIGHT_SLIDER_STEPS - 1);
+
+  xx = x;
+  yy = y + 3;
+  ww = VITA_LIGHT_SLIDER_TRACK;
+  hh = 2;
+  V_GetWideRect(&xx, &yy, &ww, &hh, VPT_STRETCH);
+  V_FillRect(0, xx, yy, ww, hh, PAL_BLACK);
+
+  // Use Doom's HUD-font "I" as the slider thumb. Its native width matches
+  // the old four-pixel rectangle while making the control fit the rest of
+  // the game's menu style.
+  M_DrawString(knob_x, y, CR_WHITE, "I");
+
+  sprintf(menu_buffer, "%d%%", value);
+  if (s == current_setup_menu + set_menu_itemon && whichSkull && !setup_select)
+    strcat(menu_buffer, " <");
+  M_DrawMenuString(x + 60, y, color);
+}
+
+static void M_DrawVitaPercentSlider(const setup_menu_t* s, int color)
+{
+  int x = s->m_x;
+  int y = s->m_y;
+  int position = M_VitaPercentSliderPosition(*s->var.def->location.pi);
+  int value = M_VitaPercentSliderValue(position);
+  int knob_x;
+  int xx, yy, ww, hh;
+
+  knob_x = x + (position * (VITA_LIGHT_SLIDER_TRACK - VITA_LIGHT_SLIDER_KNOB)
+                + (VITA_PERCENT_SLIDER_STEPS - 2) / 2)
+               / (VITA_PERCENT_SLIDER_STEPS - 1);
+
+  xx = x;
+  yy = y + 3;
+  ww = VITA_LIGHT_SLIDER_TRACK;
+  hh = 2;
+  V_GetWideRect(&xx, &yy, &ww, &hh, VPT_STRETCH);
+  V_FillRect(0, xx, yy, ww, hh, PAL_BLACK);
+
+  M_DrawString(knob_x, y, CR_WHITE, "I");
+
+  sprintf(menu_buffer, "%d%%", value);
+  if (s == current_setup_menu + set_menu_itemon && whichSkull && !setup_select)
+    strcat(menu_buffer, " <");
+  M_DrawMenuString(x + 60, y, color);
+}
+#endif
+
 /////////////////////////////
 //
 // phares 4/18/98:
@@ -2053,6 +2251,17 @@ static void M_DrawSetting(const setup_menu_t* s)
     M_DrawMenuString(x,y,color);
     return;
   }
+
+#ifdef __vita__
+  // Is the item a Vita percentage slider?
+  if (flags & S_SLIDER) {
+    if (flags & S_VITA_PERCENT_SLIDER)
+      M_DrawVitaPercentSlider(s, color);
+    else
+      M_DrawVitaLightSlider(s, color);
+    return;
+  }
+#endif
 
   // Is the item a simple number?
 
@@ -2258,15 +2467,17 @@ static void M_DrawScreenItems(const setup_menu_t* src)
 
   while (!(src->m_flags & S_END)) {
 
-    // See if we're to draw the item description (left-hand part)
+    if (!(src->m_flags & S_HIDDEN)) {
+      // See if we're to draw the item description (left-hand part)
 
-    if (src->m_flags & S_SHOWDESC)
-      M_DrawItem(src);
+      if (src->m_flags & S_SHOWDESC)
+        M_DrawItem(src);
 
-    // See if we're to draw the setting (right-hand part)
+      // See if we're to draw the setting (right-hand part)
 
-    if (src->m_flags & S_SHOWSET)
-      M_DrawSetting(src);
+      if (src->m_flags & S_SHOWSET)
+        M_DrawSetting(src);
+    }
     src++;
   }
 }
@@ -2322,7 +2533,7 @@ static void M_DrawInstructions(void)
   // are changing an item or just sitting on it.
 
   if (setup_select) {
-    switch (flags & (S_KEY | S_YESNO | S_WEAP | S_NUM | S_COLOR | S_CRITEM | S_CHAT | S_RESET | S_FILE | S_CHOICE)) {
+    switch (flags & (S_KEY | S_YESNO | S_WEAP | S_NUM | S_COLOR | S_CRITEM | S_CHAT | S_RESET | S_FILE | S_CHOICE | S_SLIDER)) {
       case S_KEY:
         // See if a joystick or mouse button setting is allowed for
         // this item.
@@ -2353,8 +2564,11 @@ static void M_DrawInstructions(void)
     case S_FILE:
       M_DrawStringCentered(160, 20, CR_SELECT, "Type/edit filename and Press ENTER");
       break;
-    case S_CHOICE: 
+    case S_CHOICE:
       M_DrawStringCentered(160, 20, CR_SELECT, "Press left or right to choose");
+      break;
+    case S_SLIDER:
+      M_DrawStringCentered(160, 20, CR_SELECT, "Press left or right to adjust");
       break;
     case S_RESET:
       break;
@@ -2832,7 +3046,7 @@ setup_menu_t stat_settings1[] =  // Status Bar and HUD Settings screen
   {"ARMOR GOOD/EXTRA"  ,S_NUM       ,m_null,SB_X,SB_Y+13*8, {"armor_green"}},
   {"AMMO LOW/OK"       ,S_NUM       ,m_null,SB_X,SB_Y+14*8, {"ammo_red"}},
   {"AMMO OK/GOOD"      ,S_NUM       ,m_null,SB_X,SB_Y+15*8, {"ammo_yellow"}},
-  {"BACKPACK CHANGES THRESHOLDS",S_CHOICE,m_null,SB_X,SB_Y+16*8, 
+  {"BACKPACK CHANGES THRESHOLDS",S_CHOICE,m_null,SB_X,SB_Y+16*8,
    {"ammo_colour_behaviour"},0,0,NULL,ammo_colour_behaviour_list},
 
   // Button for resetting to defaults
@@ -3254,6 +3468,16 @@ setup_menu_t* gen_settings[] =
 #define G_Y 23
 #define G_X2 284
 
+#ifdef __vita__
+/* These settings are fixed or managed by the Vita launcher/runtime. Keep
+   their configuration records intact, but hide them from the Vita setup UI. */
+#define VITA_HIDDEN_MENU_ITEM (S_SKIP|S_HIDDEN)
+#define GENERAL_MENU_Y(pc_row, vita_row) (G_Y + (vita_row) * 8)
+#else
+#define VITA_HIDDEN_MENU_ITEM 0
+#define GENERAL_MENU_Y(pc_row, vita_row) (G_Y + (pc_row) * 8)
+#endif
+
 static const char *videomodes[] = {
   "8bit","15bit","16bit", "32bit",
 #ifdef GL_DOOM
@@ -3264,27 +3488,36 @@ static const char *videomodes[] = {
 static const char *gltexformats[] = {
   "GL_RGBA","GL_RGB5_A1", "GL_RGBA4", NULL};
 
+#ifdef __vita__
+/* Vita exposes only the two MIDI renderers supported by this port. Keep the
+   desktop list in i_sound.c unchanged for non-Vita builds. */
+static const char *vita_midiplayers[] = {
+  "opl2", "fluidsynth", NULL
+};
+#define GENERAL_MIDI_PLAYERS vita_midiplayers
+#else
+#define GENERAL_MIDI_PLAYERS midiplayers
+#endif
+
 setup_menu_t gen_settings1[] = { // General Settings screen1
 
   {"Video",                          S_SKIP|S_TITLE,     m_null, G_X, G_Y+ 1*8},
-  {"Video mode",                     S_CHOICE,           m_null, G_X, G_Y+ 2*8, {"videomode"}, 0, 0, M_ChangeVideoMode, videomodes},
-  {"Screen Resolution",              S_CHOICE,           m_null, G_X, G_Y+ 3*8, {"screen_resolution"}, 0, 0, M_ChangeVideoMode, screen_resolutions_list},
-  {"Aspect Ratio",                   S_CHOICE,           m_null, G_X, G_Y+ 4*8, {"render_aspect"}, 0, 0, M_ChangeAspectRatio, render_aspects_list},
-  {"Fullscreen Video mode",          S_YESNO,            m_null, G_X, G_Y+ 5*8, {"use_fullscreen"}, 0, 0, M_ChangeFullScreen},
-  {"Status Bar and Menu Appearance", S_CHOICE,           m_null, G_X, G_Y+ 6*8, {"render_stretch_hud"}, 0, 0, M_ChangeStretch, render_stretch_list},
-  {"Vertical Sync",                  S_YESNO,            m_null, G_X, G_Y+ 7*8, {"render_vsync"}, 0, 0, M_ChangeVideoMode},
-  
-  {"Enable Translucency",            S_YESNO,            m_null, G_X, G_Y+ 9*8, {"translucency"}, 0, 0, M_Trans},
-  {"Translucency filter percentage", S_NUM,              m_null, G_X, G_Y+10*8, {"tran_filter_pct"}, 0, 0, M_Trans},
-  {"Uncapped Framerate",             S_YESNO,            m_null, G_X, G_Y+11*8, {"uncapped_framerate"}, 0, 0, M_ChangeUncappedFrameRate},
+  {"Video mode",                     VITA_HIDDEN_MENU_ITEM|S_CHOICE, m_null, G_X, G_Y+ 2*8, {"videomode"}, 0, 0, M_ChangeVideoMode, videomodes},
+  {"Screen Resolution",              VITA_HIDDEN_MENU_ITEM|S_CHOICE, m_null, G_X, G_Y+ 3*8, {"screen_resolution"}, 0, 0, M_ChangeVideoMode, screen_resolutions_list},
+  {"Aspect Ratio",                   S_CHOICE,           m_null, G_X, GENERAL_MENU_Y(4, 2), {"render_aspect"}, 0, 0, M_ChangeAspectRatio, render_aspects_list},
+  {"Fullscreen Video mode",          VITA_HIDDEN_MENU_ITEM|S_YESNO, m_null, G_X, G_Y+ 5*8, {"use_fullscreen"}, 0, 0, M_ChangeFullScreen},
+  {"Status Bar and Menu Appearance", S_CHOICE,           m_null, G_X, GENERAL_MENU_Y(6, 3), {"render_stretch_hud"}, 0, 0, M_ChangeStretch, render_stretch_list},
+  {"Vertical Sync",                  S_YESNO,            m_null, G_X, GENERAL_MENU_Y(7, 4), {"render_vsync"}, 0, 0, M_ChangeVideoMode},
 
-  {"Sound & Music",                  S_SKIP|S_TITLE,     m_null, G_X, G_Y+13*8},
-  {"Number of Sound Channels",       S_NUM|S_PRGWARN,    m_null, G_X, G_Y+14*8, {"snd_channels"}},
-  {"Enable v1.1 Pitch Effects",      S_YESNO,            m_null, G_X, G_Y+15*8, {"pitched_sounds"}},
-  {"PC Speaker emulation",           S_YESNO|S_PRGWARN,  m_null, G_X, G_Y+16*8, {"snd_pcspeaker"}},
-  {"Preferred MIDI player",          S_CHOICE|S_PRGWARN, m_null, G_X, G_Y+17*8, {"snd_midiplayer"}, 0, 0, M_ChangeMIDIPlayer, midiplayers},
-  {"disable sound cutoffs",          S_YESNO,            m_null, G_X, G_Y+18*8, {"full_sounds"}},
-//{"Low-pass filter",                S_YESNO,            m_null, G_X, G_Y+19*8, {"lowpass_filter"}},
+  {"Enable Translucency",            S_YESNO,            m_null, G_X, GENERAL_MENU_Y(9, 6), {"translucency"}, 0, 0, M_Trans},
+  {"Translucency filter percentage", S_NUM,              m_null, G_X, GENERAL_MENU_Y(10, 7), {"tran_filter_pct"}, 0, 0, M_Trans},
+  {"Uncapped Framerate",             S_YESNO,            m_null, G_X, GENERAL_MENU_Y(11, 8), {"uncapped_framerate"}, 0, 0, M_ChangeUncappedFrameRate},
+
+  {"Sound & Music",                  S_SKIP|S_TITLE,     m_null, G_X, GENERAL_MENU_Y(13, 10)},
+  {"Number of Sound Channels",       S_NUM|S_PRGWARN,    m_null, G_X, GENERAL_MENU_Y(14, 11), {"snd_channels"}},
+  {"Enable v1.1 Pitch Effects",      S_YESNO,            m_null, G_X, GENERAL_MENU_Y(15, 12), {"pitched_sounds"}},
+  {"PC Speaker emulation",           S_YESNO|S_PRGWARN,  m_null, G_X, GENERAL_MENU_Y(16, 13), {"snd_pcspeaker"}},
+  {"Preferred MIDI player",          S_CHOICE|S_PRGWARN, m_null, G_X, GENERAL_MENU_Y(17, 14), {"snd_midiplayer"}, 0, 0, M_ChangeMIDIPlayer, GENERAL_MIDI_PLAYERS},
 
   // Button for resetting to defaults
   {0,S_RESET,m_null,X_BUTTON,Y_BUTTON},
@@ -3328,21 +3561,21 @@ setup_menu_t gen_settings2[] = { // General Settings screen2
   {"Enable Mouse",                     S_YESNO, m_null, G_X, G_Y+ 2*8, {"use_mouse"}},
   {"Enable Joystick",                  S_YESNO, m_null, G_X, G_Y+ 3*8, {"use_joystick"}},
 
-  {"Files Preloaded at Game Startup",  S_SKIP|S_TITLE, m_null, G_X, G_Y + 5*8},
-  {"WAD # 1",                          S_FILE, m_null, GF_X, G_Y+ 6*8, {"wadfile_1"}}, 
-  {"WAD #2",                           S_FILE, m_null, GF_X, G_Y+ 7*8, {"wadfile_2"}},
-  {"DEH/BEX # 1",                      S_FILE, m_null, GF_X, G_Y+ 8*8, {"dehfile_1"}},
-  {"DEH/BEX #2",                       S_FILE, m_null, GF_X, G_Y+ 9*8, {"dehfile_2"}},
+  {"Files Preloaded at Game Startup",  VITA_HIDDEN_MENU_ITEM|S_TITLE, m_null, G_X, G_Y + 5*8},
+  {"WAD # 1",                          VITA_HIDDEN_MENU_ITEM|S_FILE, m_null, GF_X, G_Y+ 6*8, {"wadfile_1"}},
+  {"WAD #2",                           VITA_HIDDEN_MENU_ITEM|S_FILE, m_null, GF_X, G_Y+ 7*8, {"wadfile_2"}},
+  {"DEH/BEX # 1",                      VITA_HIDDEN_MENU_ITEM|S_FILE, m_null, GF_X, G_Y+ 8*8, {"dehfile_1"}},
+  {"DEH/BEX #2",                       VITA_HIDDEN_MENU_ITEM|S_FILE, m_null, GF_X, G_Y+ 9*8, {"dehfile_2"}},
 
-  {"Miscellaneous",                    S_SKIP|S_TITLE,  m_null, G_X, G_Y+11*8},
-  {"Maximum number of player corpses", S_NUM|S_PRGWARN, m_null, G_X, G_Y+12*8, {"max_player_corpse"}},
-  {"Game speed, percentage of normal", S_NUM|S_PRGWARN, m_null, G_X, G_Y+13*8, {"realtic_clock_rate"}},
-  {"Default skill level",              S_CHOICE,        m_null, G_X, G_Y+14*8, {"default_skill"}, 0, 0, NULL, gen_skillstrings},
-  {"Default compatibility level",      S_CHOICE,        m_null, G_X, G_Y+15*8, {"default_compatibility_level"}, 0, 0, NULL, &gen_compstrings[1]},
-  {"Show ENDOOM screen",               S_YESNO,         m_null, G_X, G_Y+16*8, {"showendoom"}},
-  {"Fullscreen menu background",       S_YESNO, m_null, G_X, G_Y + 17*8, {"menu_background"}},
+  {"Miscellaneous",                    S_SKIP|S_TITLE,  m_null, G_X, GENERAL_MENU_Y(11, 5)},
+  {"Maximum number of player corpses", S_NUM|S_PRGWARN, m_null, G_X, GENERAL_MENU_Y(12, 6), {"max_player_corpse"}},
+  {"Game speed, percentage of normal", S_NUM|S_PRGWARN, m_null, G_X, GENERAL_MENU_Y(13, 7), {"realtic_clock_rate"}},
+  {"Default skill level",              S_CHOICE,        m_null, G_X, GENERAL_MENU_Y(14, 8), {"default_skill"}, 0, 0, NULL, gen_skillstrings},
+  {"Default compatibility level",      S_CHOICE,        m_null, G_X, GENERAL_MENU_Y(15, 9), {"default_compatibility_level"}, 0, 0, NULL, &gen_compstrings[1]},
+  {"Show ENDOOM screen",               S_YESNO,         m_null, G_X, GENERAL_MENU_Y(16, 10), {"showendoom"}},
+  {"Fullscreen menu background",       S_YESNO, m_null, G_X, GENERAL_MENU_Y(17, 11), {"menu_background"}},
 #ifdef USE_WINDOWS_LAUNCHER
-  {"Use In-Game Launcher",             S_CHOICE,        m_null, G_X, G_Y+ 18*8, {"launcher_enable"}, 0, 0, NULL, launcher_enable_states},
+  {"Use In-Game Launcher",             S_CHOICE,        m_null, G_X, GENERAL_MENU_Y(18, 12), {"launcher_enable"}, 0, 0, NULL, launcher_enable_states},
 #endif
 
 
@@ -3391,7 +3624,7 @@ setup_menu_t gen_settings4[] = { // General Settings screen3
   {"Drawing of patch edges",     S_CHOICE, m_null, G_X, G_Y+ 9*8, {"patch_edges"}, 0, 0, NULL, edgetypes},
   {"Flashing HOM indicator",     S_YESNO,  m_null, G_X, G_Y+10*8, {"flashing_hom"}},
 
-  // prboom-plus 
+  // prboom-plus
   {"Wipe Screen Effect",         S_YESNO,  m_null, G_X, G_Y+12*8, {"render_wipescreen"}},
   {"Change Palette On Pain",     S_YESNO,  m_null, G_X, G_Y+14*8, {"palette_ondamage"}, 0, 0, M_ChangeApplyPalette},
   {"Change Palette On Bonus",    S_YESNO,  m_null, G_X, G_Y+15*8, {"palette_onbonus"}, 0, 0, M_ChangeApplyPalette},
@@ -3474,7 +3707,7 @@ setup_menu_t gen_settings7[] =
 static const char *gltexfilters[] = {
   "None", "Linear", "Nearest Mipmap", "Linear Mipmap", "Bilinear", "Trilinear", NULL};
 
-static const char *gltexfilters_anisotropics[] = 
+static const char *gltexfilters_anisotropics[] =
   {"Off", "2x", "4x", "8x", "16x", NULL};
 
 setup_menu_t gen_settings8[] = { // General Settings screen4
@@ -3491,18 +3724,50 @@ setup_menu_t gen_settings8[] = { // General Settings screen4
   {"Enable External Hi-Res",     S_YESNO, m_null, G_X,G_Y+10*8, {"gl_texture_external_hires"}, 0, 0, M_ChangeTextureUseHires},
   {"Override PWAD's graphics with Hi-Res" ,S_YESNO|S_PRGWARN,m_null,G_X,G_Y+11*8, {"gl_hires_override_pwads"}, 0, 0, M_ChangeTextureUseHires},
 
-  {"Enable High Quality Resize", S_YESNO,  m_null, G_X, G_Y+13*8, {"gl_texture_hqresize"}, 0, 0, M_ChangeTextureHQResize},
-  {"Resize textures",            S_CHOICE, m_null, G_X, G_Y+14*8, {"gl_texture_hqresize_textures"}, 0, 0, M_ChangeTextureHQResize, gl_hqresizemodes},
-  {"Resize sprites",             S_CHOICE, m_null, G_X, G_Y+15*8, {"gl_texture_hqresize_sprites"}, 0, 0, M_ChangeTextureHQResize, gl_hqresizemodes},
-  {"Resize patches",             S_CHOICE, m_null, G_X, G_Y+16*8, {"gl_texture_hqresize_patches"}, 0, 0, M_ChangeTextureHQResize, gl_hqresizemodes},
+  {"Enable High Quality Resize", VITA_HIDDEN_MENU_ITEM|S_YESNO,  m_null, G_X, G_Y+13*8, {"gl_texture_hqresize"}, 0, 0, M_ChangeTextureHQResize},
+  {"Resize textures",            VITA_HIDDEN_MENU_ITEM|S_CHOICE, m_null, G_X, G_Y+14*8, {"gl_texture_hqresize_textures"}, 0, 0, M_ChangeTextureHQResize, gl_hqresizemodes},
+  {"Resize sprites",             VITA_HIDDEN_MENU_ITEM|S_CHOICE, m_null, G_X, G_Y+15*8, {"gl_texture_hqresize_sprites"}, 0, 0, M_ChangeTextureHQResize, gl_hqresizemodes},
+  {"Resize patches",             VITA_HIDDEN_MENU_ITEM|S_CHOICE, m_null, G_X, G_Y+16*8, {"gl_texture_hqresize_patches"}, 0, 0, M_ChangeTextureHQResize, gl_hqresizemodes},
 
-  {"Allow Detail Textures",      S_YESNO,  m_null, G_X, G_Y+18*8, {"gl_allow_detail_textures"}, 0, 0, M_ChangeUseDetail},
-  {"Blend Animations",           S_YESNO,  m_null, G_X, G_Y+19*8, {"gl_blend_animations"}},
+  {"Allow Detail Textures",      S_YESNO,  m_null, G_X, GENERAL_MENU_Y(18, 13), {"gl_allow_detail_textures"}, 0, 0, M_ChangeUseDetail},
+  {"Blend Animations",           S_YESNO,  m_null, G_X, GENERAL_MENU_Y(19, 14), {"gl_blend_animations"}},
 #endif //GL_DOOM
 
   {"<- PREV",S_SKIP|S_PREV,m_null,KB_PREV,KB_Y+20*8, {gen_settings7}},
   {0,S_SKIP|S_END,m_null}
 };
+
+#ifdef __vita__
+  static const char *vita_joystick_modes[] = {"Digital", "Analog", NULL};
+  static const char *vita_touch_states[] = {"no", "yes"};
+
+setup_menu_t vita_features_settings1[] =
+{
+  {"JOYSTICK",                   S_SKIP|S_TITLE, m_null, G_X, G_Y+ 1*8},
+  {"Movement mode",              S_CHOICE,       m_null, G_X, G_Y+ 2*8, {"vita_joystick_movement_mode"}, 0, 0, NULL, vita_joystick_modes},
+  {"Left stick deadzone",        S_YESNO,        m_null, G_X, G_Y+ 3*8, {"vita_left_stick_deadzone"}},
+  {"Left stick deadzone amount", S_SLIDER|S_VITA_PERCENT_SLIDER, m_null, G_X, G_Y+ 4*8, {"vita_left_stick_deadzone_amount"}},
+  {"Right stick deadzone",       S_YESNO,        m_null, G_X, G_Y+ 5*8, {"vita_right_stick_deadzone"}},
+  {"Right stick deadzone amount",S_SLIDER|S_VITA_PERCENT_SLIDER, m_null, G_X, G_Y+ 6*8, {"vita_right_stick_deadzone_amount"}},
+  {"CAMERA",                    S_SKIP|S_TITLE, m_null, G_X, G_Y+ 8*8},
+  {"GYRO AIM",                  S_YESNO,        m_null, G_X, G_Y+ 9*8, {"vita_gyro_aim"}},
+  {"HORIZONTAL SENSITIVITY",    S_NUM,          m_null, G_X, G_Y+10*8, {"vita_horizontal_sensitivity"}},
+  {"DISPLAY",                   S_SKIP|S_TITLE, m_null, G_X, G_Y+12*8},
+  {"Increase minimum sector light", S_SLIDER,    m_null, G_X, G_Y+13*8, {"vita_minimum_sector_light"}},
+  {"INCREASE AVERAGE SECTOR LIGHT", S_SLIDER,   m_null, G_X, G_Y+14*8, {"vita_average_sector_light"}},
+  {"Color saturation",           S_NUM,          m_null, G_X, G_Y+15*8, {"vita_color_saturation"}},
+  {"FPS COUNTER",                S_YESNO,        m_null, G_X, G_Y+16*8, {"vita_show_fps"}},
+  {"TOUCH",                      S_SKIP|S_TITLE, m_null, G_X, G_Y+18*8},
+  {"Touch support inside menu",  S_CHOICE,       m_null, G_X, G_Y+19*8, {"vita_touch_inside_menu"}, 0, 0, NULL, vita_touch_states},
+  {0,                            S_SKIP|S_END,   m_null}
+};
+
+setup_menu_t* vita_features_settings[] =
+{
+  vita_features_settings1,
+  NULL
+};
+#endif
 
 void M_Trans(void) // To reset translucency after setting it in menu
 {
@@ -3565,6 +3830,27 @@ void M_General(int choice)
   current_setup_menu[--set_menu_itemon].m_flags |= S_HILITE;
 }
 
+#ifdef __vita__
+// Setting up the Vita-only feature screen. Display values are applied by the
+// renderer without changing gameplay state.
+void M_VitaFeatures(int choice)
+{
+  M_SetupNextMenu(&VitaFeaturesDef);
+
+  setup_active = true;
+  setup_screen = ss_vita;
+  set_general_active = true;
+  setup_select = false;
+  default_verify = false;
+  setup_gather = false;
+  mult_screens_index = 0;
+  current_setup_menu = vita_features_settings[0];
+  set_menu_itemon = M_GetSetupMenuItemOn();
+  while (current_setup_menu[set_menu_itemon++].m_flags & S_SKIP);
+  current_setup_menu[--set_menu_itemon].m_flags |= S_HILITE;
+}
+#endif
+
 // The drawing part of the General Setup initialization. Draw the
 // background, title, instruction line, and items.
 
@@ -3585,6 +3871,18 @@ void M_DrawGeneral(void)
   if (default_verify)
     M_DrawDefVerify();
 }
+
+#ifdef __vita__
+void M_DrawVitaFeatures(void)
+{
+  menuactive = mnact_full;
+
+  M_DrawBackground("FLOOR4_6", 0);
+  M_DrawTitle(90, 2, "M_VITAFE", CR_DEFAULT, "VITA FEATURES", CR_GOLD);
+  M_DrawInstructions();
+  M_DrawScreenItems(current_setup_menu);
+}
+#endif
 
 /////////////////////////////
 //
@@ -4013,6 +4311,1043 @@ static void M_SelectDone(setup_menu_t* ptr)
     print_warning_about_changes--;
 }
 
+#ifdef __vita__
+/*
+ * Convert a completed Vita IME edit into the same key events used by the
+ * original menu editors. This keeps range checks, warnings, config
+ * synchronization, save handling, and per-setting actions in one place.
+ */
+void M_ProcessVitaIme(void)
+{
+  char value[SAVESTRINGSIZE];
+  int result;
+  int i;
+  dboolean save_edit;
+  event_t event;
+
+  if (vita_save_ime_waiting)
+  {
+    if (!saveStringEnter)
+    {
+      vita_save_ime_waiting = false;
+    }
+    else if (I_GetTime() >= vita_save_ime_deadline)
+    {
+      vita_save_ime_waiting = false;
+      if (VitaIme_Start("Save game name", savegamestrings[saveSlot],
+                        SCE_IME_TYPE_BASIC_LATIN, SAVESTRINGSIZE - 1))
+        vita_save_ime_edit = true;
+      else
+        lprintf(LO_ERROR, "M_ProcessVitaIme: could not open save-name IME\n");
+    }
+  }
+
+  if (!VitaIme_IsActive())
+    return;
+
+  result = VitaIme_Poll(value, sizeof(value));
+  if (result == VITA_IME_RESULT_PENDING)
+    return;
+
+  /* sceImeDialogTerm() makes the dialog inactive before the closing Cross or
+     touch-up has necessarily disappeared from the game's input sources.  The
+     next menu pass must consume that residual input instead of reopening the
+     field that was just edited. */
+  vita_ime_ignore_confirm = true;
+  vita_ime_touch_release_pending = true;
+
+  save_edit = vita_save_ime_edit;
+  vita_save_ime_edit = false;
+
+  if (!save_edit && (!setup_select || !setup_gather))
+    return;
+
+  event.type = ev_keydown;
+  event.data2 = 0;
+  event.data3 = 0;
+
+  if (result == VITA_IME_RESULT_ACCEPTED)
+  {
+    if (save_edit)
+    {
+      /* The IME returns the complete edited string, so replay it from an
+         empty buffer through the existing save-name editor. */
+      savegamestrings[saveSlot][0] = 0;
+      saveCharIndex = 0;
+    }
+
+    for (i = 0; value[i]; i++)
+    {
+      event.data1 = (unsigned char)value[i];
+      D_PostEvent(&event);
+    }
+
+    /* The existing editor commits an empty field without changing the value. */
+    event.data1 = key_menu_enter;
+  }
+  else
+    event.data1 = key_menu_escape;
+
+  D_PostEvent(&event);
+}
+
+/*
+ * Front-touch support for the menu system and input dialogs.
+ *
+ * The game menus use a 320x200 logical coordinate system while the Vita
+ * touch panel reports its own physical coordinate range.  Keep the panel
+ * sampling here, but convert through the same presentation and stretch
+ * geometry used by the menu renderer before testing the message text.
+ *
+ * Only one contact is accepted.  While the finger is down, menu highlighting
+ * follows it without activating anything; the final target is activated when
+ * the finger is released.  Slider values follow the finger while it remains
+ * over their track.  The back panel is intentionally not read here yet.
+ */
+#define VITA_TOUCH_DISPLAY_WIDTH  960
+#define VITA_TOUCH_DISPLAY_HEIGHT 544
+
+static dboolean vita_touch_initialized;
+static dboolean vita_front_touch_down;
+static dboolean vita_front_touch_cancelled;
+static dboolean vita_message_touch_armed;
+static dboolean vita_message_touch_inside;
+static dboolean vita_menu_touch_armed;
+static dboolean vita_menu_touch_setup;
+static dboolean vita_menu_touch_slider;
+static dboolean vita_color_touch_armed;
+static int vita_menu_touch_item;
+static int vita_menu_touch_slider_item;
+static int vita_menu_touch_x;
+static int vita_color_touch_x;
+static int vita_color_touch_y;
+static menu_t *vita_menu_touch_menu;
+static setup_menu_t *vita_menu_touch_setup_menu;
+static SceTouchPanelInfo vita_front_touch_panel;
+
+static void M_InitVitaFrontTouch(void)
+{
+  int result;
+
+  sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT,
+                           SCE_TOUCH_SAMPLING_STATE_START);
+
+  result = sceTouchGetPanelInfo(SCE_TOUCH_PORT_FRONT,
+                                &vita_front_touch_panel);
+  if (result < 0 ||
+      vita_front_touch_panel.maxAaX <= vita_front_touch_panel.minAaX ||
+      vita_front_touch_panel.maxAaY <= vita_front_touch_panel.minAaY)
+  {
+    /* The Vita panel uses a 1920x1088 coordinate space when panel
+       information is unavailable (for example on an incomplete emulator
+       implementation). */
+    vita_front_touch_panel.minAaX = 0;
+    vita_front_touch_panel.minAaY = 0;
+    vita_front_touch_panel.maxAaX = 1920;
+    vita_front_touch_panel.maxAaY = 1088;
+  }
+
+  vita_touch_initialized = true;
+}
+
+static int M_ScaleVitaTouchCoordinate(int value, int min_value,
+                                      int max_value, int output_size)
+{
+  if (value <= min_value)
+    return 0;
+  if (value >= max_value)
+    return output_size - 1;
+
+  return ((value - min_value) * (output_size - 1)) /
+         (max_value - min_value);
+}
+
+static dboolean M_VitaTouchToVideo(int raw_x, int raw_y,
+                                   int *video_x, int *video_y)
+{
+  int display_x;
+  int display_y;
+
+  display_x = M_ScaleVitaTouchCoordinate(
+    raw_x, vita_front_touch_panel.minAaX,
+    vita_front_touch_panel.maxAaX, VITA_TOUCH_DISPLAY_WIDTH);
+  display_y = M_ScaleVitaTouchCoordinate(
+    raw_y, vita_front_touch_panel.minAaY,
+    vita_front_touch_panel.maxAaY, VITA_TOUCH_DISPLAY_HEIGHT);
+
+  if (V_GetMode() != VID_MODEGL)
+  {
+    /* Software renders to SCREENWIDTH/SCREENHEIGHT and presents that image
+       inside dst_rect on the native Vita framebuffer. */
+    if (dst_rect.w <= 0 || dst_rect.h <= 0 ||
+        display_x < dst_rect.x || display_y < dst_rect.y ||
+        display_x >= dst_rect.x + dst_rect.w ||
+        display_y >= dst_rect.y + dst_rect.h)
+      return false;
+
+    *video_x = ((display_x - dst_rect.x) * SCREENWIDTH) / dst_rect.w;
+    *video_y = ((display_y - dst_rect.y) * SCREENHEIGHT) / dst_rect.h;
+  }
+  else
+  {
+    /* VitaGL renders directly to the native framebuffer. */
+    *video_x = (display_x * SCREENWIDTH) / VITA_TOUCH_DISPLAY_WIDTH;
+    *video_y = (display_y * SCREENHEIGHT) / VITA_TOUCH_DISPLAY_HEIGHT;
+  }
+
+  if (*video_x < 0 || *video_y < 0 ||
+      *video_x >= SCREENWIDTH || *video_y >= SCREENHEIGHT)
+    return false;
+
+  return true;
+}
+
+static int M_VitaLookupCoordinate(const short *lookup1,
+                                  const short *lookup2,
+                                  int count, int value)
+{
+  int i;
+
+  for (i = 0; i < count; i++)
+    if (value >= lookup1[i] && value <= lookup2[i])
+      return i;
+
+  return -1;
+}
+
+static dboolean M_VitaVideoToLogical(int video_x, int video_y,
+                                     int *logical_x, int *logical_y)
+{
+  const stretch_param_t *params;
+  const cb_video_t *video;
+  int x;
+  int y;
+
+  if (!stretch_params)
+    return false;
+
+  params = &stretch_params[VPT_STRETCH & VPT_ALIGN_MASK];
+  video = params->video;
+  if (!video || video->width <= 0 || video->height <= 0)
+    return false;
+
+  x = video_x - params->deltax1;
+  y = video_y - params->deltay1;
+  if (x < 0 || y < 0 || x >= video->width || y >= video->height)
+    return false;
+
+  *logical_x = M_VitaLookupCoordinate(video->x1lookup, video->x2lookup,
+                                      320, x);
+  *logical_y = M_VitaLookupCoordinate(video->y1lookup, video->y2lookup,
+                                      200, y);
+
+  return *logical_x >= 0 && *logical_y >= 0;
+}
+
+static int M_VitaMessageLineWidth(const char *start, const char *end)
+{
+  int width = 0;
+
+  while (start < end)
+  {
+    int c = toupper((unsigned char)*start++) - HU_FONTSTART;
+    width += (c < 0 || c >= HU_FONTSIZE) ? 4 : hu_font[c].width;
+  }
+
+  return width;
+}
+
+static dboolean M_VitaMessageTextHit(int x, int y)
+{
+  const char *line_start = messageString;
+  int line_y;
+  int line_height;
+  int total_height;
+
+  if (!messageString)
+    return false;
+
+  total_height = M_StringHeight(messageString);
+  line_height = hu_font[0].height;
+  line_y = 100 - total_height / 2;
+
+  while (*line_start)
+  {
+    const char *line_end = line_start;
+    int width;
+    int line_x;
+
+    while (*line_end && *line_end != '\n')
+      line_end++;
+
+    if (line_end > line_start)
+    {
+      width = M_VitaMessageLineWidth(line_start, line_end);
+      line_x = 160 - width / 2;
+
+      /* Keep the hitbox aligned with the visible, clipped text. */
+      if (line_x < 0)
+        line_x = 0;
+      if (line_x + width > BASE_WIDTH)
+        width = BASE_WIDTH - line_x;
+
+      if (width > 0 && x >= line_x && x < line_x + width &&
+          y >= line_y && y < line_y + line_height)
+        return true;
+    }
+
+    line_y += line_height;
+    if (!*line_end)
+      break;
+    line_start = line_end + 1;
+  }
+
+  return false;
+}
+
+static void M_VitaRespondToMessageTouch(dboolean inside_text)
+{
+  event_t event;
+
+  event.type = ev_keydown;
+  event.data1 = inside_text ? 'y' : 'n';
+  event.data2 = 0;
+  event.data3 = 0;
+  D_PostEvent(&event);
+}
+
+static void M_VitaPostMenuKey(int key)
+{
+  event_t event;
+
+  event.type = ev_keydown;
+  event.data1 = key;
+  event.data2 = 0;
+  event.data3 = 0;
+  D_PostEvent(&event);
+}
+
+static dboolean M_VitaVerifyTextHit(int x, int y)
+{
+  const char *text;
+  int text_x;
+  int text_y;
+  int text_width;
+  int text_height;
+
+  if (default_verify)
+    text = "Reset to defaults? (Y or N)";
+  else if (delete_verify)
+    text = "Delete savegame? (Y or N)";
+  else
+    return false;
+
+  text_x = VERIFYBOXXORG + 8;
+  text_y = VERIFYBOXYORG + 8;
+  text_width = M_StringWidth(text);
+  text_height = M_StringHeight(text);
+
+  return x >= text_x && x < text_x + text_width &&
+         y >= text_y && y < text_y + text_height;
+}
+
+/* Big-font menus use one fixed-height row per menu item.  The help/credits
+ * pages have a single empty placeholder item; on those pages the whole
+ * rendered page is the activation area. */
+static int M_VitaFindMenuItem(int y)
+{
+  int i;
+
+  if (!currentMenu || currentMenu->numitems <= 0)
+    return -1;
+
+  if (currentMenu->numitems == 1 &&
+      !currentMenu->menuitems[0].name[0])
+    return 0;
+
+  for (i = 0; i < currentMenu->numitems; i++)
+  {
+    int row_y;
+
+    if (currentMenu->menuitems[i].status == -1)
+      continue;
+
+    row_y = currentMenu->y + i * LINEHEIGHT;
+    if (y >= row_y - 4 && y < row_y + LINEHEIGHT - 4)
+      return i;
+  }
+
+  return -1;
+}
+
+/* Setup rows are drawn at their m_y baseline.  Navigation rows are the only
+ * S_SKIP entries that can be activated by touch; category titles remain
+ * decorative. */
+static int M_VitaFindSetupItem(int x, int y)
+{
+  setup_menu_t *item;
+  int i;
+
+  if (!current_setup_menu)
+    return -1;
+
+  for (i = 0, item = current_setup_menu;
+       !(item->m_flags & S_END);
+       i++, item++)
+  {
+    int flags = item->m_flags;
+
+    if ((flags & S_SKIP) && !(flags & (S_PREV | S_NEXT)))
+      continue;
+
+    if (y < item->m_y - 4 ||
+        y >= item->m_y + ((flags & (S_PREV | S_NEXT)) ? 8 : 4))
+      continue;
+
+    /* PREV and NEXT share the same bottom row, so separate them by side. */
+    if ((flags & S_PREV) && x >= BASE_WIDTH / 2)
+      continue;
+    if ((flags & S_NEXT) && x < BASE_WIDTH / 2)
+      continue;
+
+    return i;
+  }
+
+  return -1;
+}
+
+static void M_VitaSelectSetupItem(int item)
+{
+  setup_menu_t *old_item;
+
+  if (!current_setup_menu || item < 0 ||
+      current_setup_menu[item].m_flags & S_SKIP)
+    return;
+
+  if (set_menu_itemon == item)
+    return;
+
+  old_item = current_setup_menu + set_menu_itemon;
+  if (!(old_item->m_flags & S_END))
+    old_item->m_flags &= ~(S_HILITE | S_SELECT);
+
+  set_menu_itemon = item;
+  current_setup_menu[item].m_flags |= S_HILITE;
+  S_StartSound(NULL, sfx_pstop);
+}
+
+static dboolean M_VitaColorPaletteHit(int x, int y)
+{
+  return x >= COLORPALXORIG &&
+         x < COLORPALXORIG + 16 * (CHIP_SIZE + 1) &&
+         y >= COLORPALYORIG &&
+         y < COLORPALYORIG + 16 * (CHIP_SIZE + 1);
+}
+
+/* The original menu thermometers are drawn with the same geometry in the
+ * software and VitaGL paths.  Keep touch hit testing in that logical 320x200
+ * space so it follows the rendered bar instead of the physical framebuffer. */
+enum
+{
+  vita_thermo_none = -1,
+  vita_thermo_screen_size,
+  vita_thermo_mouse_horiz,
+  vita_thermo_mouse_vert,
+  vita_thermo_mouse_mlook,
+  vita_thermo_mouse_accel
+};
+
+static int M_VitaThermoScale(int therm_width)
+{
+  return therm_width > 23 ? 200 / therm_width : 8;
+}
+
+static dboolean M_VitaThermoHit(int x, int y, int therm_x, int therm_y,
+                                int therm_width)
+{
+  int horiz_scaler = M_VitaThermoScale(therm_width);
+  int width = 8 + therm_width * horiz_scaler +
+              (8 - horiz_scaler) + 8;
+
+  return x >= therm_x - 4 && x < therm_x + width + 4 &&
+         y >= therm_y - 4 && y < therm_y + 12;
+}
+
+static int M_VitaThermoValueFromX(int x, int therm_x, int therm_width,
+                                  int value_max)
+{
+  int horiz_scaler = M_VitaThermoScale(therm_width);
+  int track_x = therm_x + 8;
+  int track_width = therm_width * horiz_scaler;
+  int value;
+
+  if (x <= track_x)
+    return 0;
+  if (x >= track_x + track_width - 1)
+    return value_max;
+
+  value = ((x - track_x) * value_max + track_width / 2) / track_width;
+  if (value < 0)
+    value = 0;
+  if (value > value_max)
+    value = value_max;
+  return value;
+}
+
+static int M_VitaFindLegacyThermo(int x, int y)
+{
+  if (currentMenu == &OptionsDef &&
+      M_VitaThermoHit(x, y, OptionsDef.x,
+                      OptionsDef.y + LINEHEIGHT * (scrnsize + 1), 9))
+    return vita_thermo_screen_size;
+
+  if (currentMenu == &MouseDef)
+  {
+    if (M_VitaThermoHit(x, y, MouseDef.x,
+                        MouseDef.y + LINEHEIGHT * (mouse_horiz + 1), 100))
+      return vita_thermo_mouse_horiz;
+    if (M_VitaThermoHit(x, y, MouseDef.x,
+                        MouseDef.y + LINEHEIGHT * (mouse_vert + 1), 100))
+      return vita_thermo_mouse_vert;
+    if (M_VitaThermoHit(x, y, MouseDef.x,
+                        MouseDef.y + LINEHEIGHT * (mouse_mlook + 1), 100))
+      return vita_thermo_mouse_mlook;
+    if (M_VitaThermoHit(x, y, MouseDef.x,
+                        MouseDef.y + LINEHEIGHT * (mouse_accel + 1), 100))
+      return vita_thermo_mouse_accel;
+  }
+
+  return vita_thermo_none;
+}
+
+static void M_VitaSetLegacyThermo(int thermo, int x)
+{
+  int value;
+  int *target = NULL;
+
+  switch (thermo)
+  {
+    case vita_thermo_screen_size:
+      value = M_VitaThermoValueFromX(
+        x, OptionsDef.x, 9, 8);
+      if (screenSize != value)
+      {
+        screenSize = value;
+        screenblocks = screenSize + 3;
+        if (screenSize < 8)
+          hud_displayed = 0;
+        R_SetViewSize(screenblocks);
+        S_StartSound(NULL, sfx_stnmov);
+      }
+      return;
+
+    case vita_thermo_mouse_horiz:
+      target = &mouseSensitivity_horiz;
+      break;
+    case vita_thermo_mouse_vert:
+      target = &mouseSensitivity_vert;
+      break;
+    case vita_thermo_mouse_mlook:
+      target = &mouseSensitivity_mlook;
+      break;
+    case vita_thermo_mouse_accel:
+      target = &mouse_acceleration;
+      break;
+    default:
+      return;
+  }
+
+  value = M_VitaThermoValueFromX(x, MouseDef.x, 100,
+                                 MOUSE_SENS_MAX - 1);
+  if (*target != value)
+  {
+    *target = value;
+    S_StartSound(NULL, sfx_stnmov);
+  }
+}
+
+static dboolean M_VitaSetupSliderHit(const setup_menu_t *item, int x, int y)
+{
+  if (!item || !(item->m_flags & S_SLIDER))
+    return false;
+
+  return x >= item->m_x - 4 &&
+         x < item->m_x + VITA_LIGHT_SLIDER_TRACK + 4 &&
+         y >= item->m_y - 4 && y < item->m_y + 12;
+}
+
+static int M_VitaFindSetupSlider(int x, int y)
+{
+  setup_menu_t *item;
+  int i;
+
+  if (!current_setup_menu)
+    return -1;
+
+  for (i = 0, item = current_setup_menu;
+       !(item->m_flags & S_END);
+       i++, item++)
+  {
+    if (M_VitaSetupSliderHit(item, x, y))
+      return i;
+  }
+
+  return -1;
+}
+
+static void M_VitaSetSetupSlider(int item, int x)
+{
+  setup_menu_t *setup_item;
+  int travel = VITA_LIGHT_SLIDER_TRACK - VITA_LIGHT_SLIDER_KNOB;
+  int steps;
+  int position;
+  int value;
+
+  if (!current_setup_menu || item < 0)
+    return;
+
+  setup_item = current_setup_menu + item;
+  if (!(setup_item->m_flags & S_SLIDER))
+    return;
+
+  steps = M_VitaSliderSteps(setup_item);
+
+  if (x <= setup_item->m_x)
+    position = 0;
+  else if (x >= setup_item->m_x + travel)
+    position = steps - 1;
+  else
+    position = ((x - setup_item->m_x) *
+                (steps - 1) + travel / 2) / travel;
+
+  if (position < 0)
+    position = 0;
+  if (position >= steps)
+    position = steps - 1;
+
+  M_VitaSelectSetupItem(item);
+  value = M_VitaSliderValue(setup_item, position);
+  if (*setup_item->var.def->location.pi != value)
+  {
+    *setup_item->var.def->location.pi = value;
+    S_StartSound(NULL, sfx_stnmov);
+    M_UpdateCurrent(setup_item->var.def);
+    if (setup_item->action)
+      setup_item->action();
+  }
+}
+
+static void M_VitaUpdateTouchTarget(int x, int y)
+{
+  int item;
+
+  if (vita_message_touch_armed)
+  {
+    if (messageToPrint)
+    {
+      if (messageNeedsInput)
+        vita_message_touch_inside = M_VitaMessageTextHit(x, y);
+      else
+        vita_message_touch_inside = true;
+    }
+    else if (default_verify || delete_verify)
+      vita_message_touch_inside = M_VitaVerifyTextHit(x, y);
+    return;
+  }
+
+  if (vita_color_touch_armed)
+  {
+    vita_color_touch_x = -1;
+    vita_color_touch_y = -1;
+    if (setup_active && colorbox_active && M_VitaColorPaletteHit(x, y))
+    {
+      vita_color_touch_x = (x - COLORPALXORIG) / (CHIP_SIZE + 1);
+      vita_color_touch_y = (y - COLORPALYORIG) / (CHIP_SIZE + 1);
+    }
+    return;
+  }
+
+  if (setup_active)
+  {
+    int previous_slider_item = vita_menu_touch_slider_item;
+
+    if (setup_select || setup_gather || saveStringEnter ||
+        current_setup_menu != vita_menu_touch_setup_menu)
+    {
+      vita_menu_touch_armed = false;
+      vita_menu_touch_slider = false;
+      return;
+    }
+
+    item = M_VitaFindSetupSlider(x, y);
+    if (item >= 0)
+    {
+      vita_menu_touch_armed = true;
+      vita_menu_touch_setup = true;
+      vita_menu_touch_slider = true;
+      vita_menu_touch_item = item;
+      vita_menu_touch_slider_item = item;
+      vita_menu_touch_x = x;
+      M_VitaSetSetupSlider(item, x);
+      return;
+    }
+
+    vita_menu_touch_slider = false;
+    item = M_VitaFindSetupItem(x, y);
+    if (item >= 0)
+    {
+      /* If a drag started on a slider and only left its narrow track, keep
+         it as a slider gesture so release does not add an extra keyboard
+         step.  Moving to another row still retargets the gesture normally. */
+      if (item == previous_slider_item)
+        vita_menu_touch_slider = true;
+      if (!(current_setup_menu[item].m_flags & (S_PREV | S_NEXT)))
+        M_VitaSelectSetupItem(item);
+      vita_menu_touch_armed = true;
+      vita_menu_touch_setup = true;
+      vita_menu_touch_item = item;
+      vita_menu_touch_x = x;
+    }
+    else
+      vita_menu_touch_armed = false;
+    return;
+  }
+
+  if (!menuactive || currentMenu != vita_menu_touch_menu)
+  {
+    vita_menu_touch_armed = false;
+    vita_menu_touch_slider = false;
+    return;
+  }
+
+  item = M_VitaFindLegacyThermo(x, y);
+  if (item != vita_thermo_none)
+  {
+    vita_menu_touch_armed = true;
+    vita_menu_touch_setup = false;
+    vita_menu_touch_slider = true;
+    vita_menu_touch_x = x;
+    M_VitaSetLegacyThermo(item, x);
+    return;
+  }
+
+  vita_menu_touch_slider = false;
+  item = M_VitaFindMenuItem(y);
+  if (item >= 0)
+  {
+    if (itemOn != item)
+      S_StartSound(NULL, sfx_pstop);
+    itemOn = item;
+    vita_menu_touch_armed = true;
+    vita_menu_touch_item = item;
+    vita_menu_touch_x = x;
+  }
+  else
+    vita_menu_touch_armed = false;
+}
+
+static void M_VitaActivateSetupItem(int item, int x)
+{
+  setup_menu_t *setup_item;
+  int flags;
+
+  if (!current_setup_menu || item < 0)
+    return;
+
+  setup_item = current_setup_menu + item;
+  flags = setup_item->m_flags;
+
+  if (flags & S_PREV)
+  {
+    M_VitaPostMenuKey(key_menu_left);
+    return;
+  }
+
+  if (flags & S_NEXT)
+  {
+    M_VitaPostMenuKey(key_menu_right);
+    return;
+  }
+
+  M_VitaSelectSetupItem(item);
+
+  /* A tap on a choice/slider changes one step and then commits it.  This
+     gives these controls useful one-touch behavior while retaining the
+     existing left/right keyboard semantics. */
+  if (flags & (S_CHOICE | S_SLIDER))
+  {
+    M_VitaPostMenuKey(key_menu_enter);
+    M_VitaPostMenuKey(x < BASE_WIDTH / 2 ? key_menu_left : key_menu_right);
+    M_VitaPostMenuKey(key_menu_enter);
+  }
+  else
+    M_VitaPostMenuKey(key_menu_enter);
+}
+
+static void M_VitaClearTouchGesture(void)
+{
+  vita_front_touch_down = false;
+  vita_front_touch_cancelled = false;
+  vita_message_touch_armed = false;
+  vita_message_touch_inside = false;
+  vita_menu_touch_armed = false;
+  vita_menu_touch_setup = false;
+  vita_menu_touch_slider = false;
+  vita_menu_touch_item = -1;
+  vita_menu_touch_slider_item = -1;
+  vita_menu_touch_x = 0;
+  vita_menu_touch_menu = NULL;
+  vita_menu_touch_setup_menu = NULL;
+  vita_color_touch_armed = false;
+  vita_color_touch_x = 0;
+  vita_color_touch_y = 0;
+}
+
+void M_ProcessVitaTouch(void)
+{
+  SceTouchData touch_data;
+  int result;
+  dboolean touched;
+  int video_x;
+  int video_y;
+  int logical_x;
+  int logical_y;
+
+  /* Common Dialog owns the panel while the Vita IME is open.  Discard the
+     gesture so closing the IME cannot generate a stale menu answer. */
+  if (VitaIme_IsActive())
+  {
+    M_VitaClearTouchGesture();
+    return;
+  }
+
+  /* The IME can finish while the finger that pressed its accept/cancel
+     control is still reported by the front panel.  Consume that contact as a
+     close transition; otherwise the underlying numeric row sees a new tap
+     and opens the IME again. */
+  if (vita_ime_touch_release_pending)
+  {
+    if (!vita_touch_initialized)
+      M_InitVitaFrontTouch();
+
+    result = sceTouchPeek(SCE_TOUCH_PORT_FRONT, &touch_data, 1);
+    if (result < 0 || touch_data.reportNum == 0)
+    {
+      vita_ime_touch_release_pending = false;
+      vita_ime_ignore_confirm = false;
+    }
+    return;
+  }
+
+  /* Touch is deliberately menu-only for now.  Do not even sample it while
+     the game is running without a menu or an input dialog. */
+  if (!vita_touch_inside_menu || (!menuactive && !messageToPrint))
+  {
+    M_VitaClearTouchGesture();
+    return;
+  }
+
+  if (!vita_touch_initialized)
+    M_InitVitaFrontTouch();
+
+  result = sceTouchPeek(SCE_TOUCH_PORT_FRONT, &touch_data, 1);
+  if (result < 0)
+    return;
+
+  /* A dialog answer or menu activation must come from one unambiguous
+     contact. */
+  if (touch_data.reportNum > 1)
+  {
+    vita_front_touch_cancelled = true;
+    return;
+  }
+
+  touched = touch_data.reportNum == 1;
+
+  if (!touched)
+  {
+    if (vita_front_touch_down && !vita_front_touch_cancelled)
+    {
+      if (vita_message_touch_armed)
+      {
+        if (messageToPrint && messageNeedsInput)
+          M_VitaRespondToMessageTouch(vita_message_touch_inside);
+        else if (messageToPrint)
+          M_VitaPostMenuKey(' ');
+        else if (default_verify || delete_verify)
+          M_VitaRespondToMessageTouch(vita_message_touch_inside);
+      }
+      else if (vita_color_touch_armed && setup_active && colorbox_active)
+      {
+        if (vita_color_touch_x >= 0 && vita_color_touch_y >= 0)
+        {
+          color_palette_x = vita_color_touch_x;
+          color_palette_y = vita_color_touch_y;
+          M_VitaPostMenuKey(key_menu_enter);
+        }
+        else
+          M_VitaPostMenuKey(key_menu_escape);
+      }
+      else if (vita_menu_touch_armed)
+      {
+        /* A slider has already been updated continuously while it was being
+           dragged.  Releasing it must not synthesize an extra left/right
+           step. */
+        if (vita_menu_touch_slider)
+        {
+          /* Nothing else to activate on release. */
+        }
+        else if (vita_menu_touch_setup)
+        {
+          if (setup_active && !setup_select &&
+              current_setup_menu == vita_menu_touch_setup_menu)
+            M_VitaActivateSetupItem(vita_menu_touch_item,
+                                    vita_menu_touch_x);
+        }
+        else if (menuactive && currentMenu == vita_menu_touch_menu)
+        {
+          itemOn = vita_menu_touch_item;
+          currentMenu->lastOn = itemOn;
+          M_VitaPostMenuKey(key_menu_enter);
+        }
+      }
+    }
+
+    M_VitaClearTouchGesture();
+    return;
+  }
+
+  if (vita_front_touch_down)
+  {
+    if (!vita_front_touch_cancelled)
+    {
+      if (M_VitaTouchToVideo(touch_data.report[0].x,
+                             touch_data.report[0].y,
+                             &video_x, &video_y) &&
+          M_VitaVideoToLogical(video_x, video_y,
+                               &logical_x, &logical_y))
+        M_VitaUpdateTouchTarget(logical_x, logical_y);
+      else
+      {
+        /* Leaving the rendered area disarms menu activation.  Modal text
+           dialogs retain their established outside-text answer semantics. */
+        if (vita_message_touch_armed)
+          vita_message_touch_inside = !messageNeedsInput &&
+                                      !default_verify && !delete_verify;
+        vita_menu_touch_armed = false;
+        vita_menu_touch_slider = false;
+        vita_color_touch_x = -1;
+        vita_color_touch_y = -1;
+      }
+    }
+    return;
+  }
+
+  vita_front_touch_down = true;
+  vita_front_touch_cancelled = false;
+  vita_message_touch_armed = false;
+  vita_message_touch_inside = false;
+  vita_menu_touch_armed = false;
+  vita_menu_touch_setup = false;
+  vita_menu_touch_slider = false;
+  vita_menu_touch_item = -1;
+  vita_menu_touch_slider_item = -1;
+  vita_menu_touch_x = 0;
+  vita_menu_touch_menu = NULL;
+  vita_menu_touch_setup_menu = NULL;
+  vita_color_touch_armed = false;
+
+  if (messageToPrint)
+  {
+    vita_message_touch_armed = true;
+    /* Non-input messages are dismissed by any tap.  Input messages keep the
+       existing text-versus-outside yes/no behavior. */
+    vita_message_touch_inside = !messageNeedsInput;
+
+    if (messageNeedsInput &&
+        M_VitaTouchToVideo(touch_data.report[0].x,
+                           touch_data.report[0].y,
+                           &video_x, &video_y) &&
+        M_VitaVideoToLogical(video_x, video_y,
+                             &logical_x, &logical_y))
+    {
+      vita_message_touch_inside = M_VitaMessageTextHit(logical_x,
+                                                        logical_y);
+    }
+    return;
+  }
+
+  if (default_verify || delete_verify)
+  {
+    /* The reset/delete boxes use the same text=YES, outside=NO rule as the
+       quit dialog, although they are implemented by separate flags. */
+    vita_message_touch_armed = true;
+    vita_message_touch_inside = false;
+
+    if (M_VitaTouchToVideo(touch_data.report[0].x,
+                           touch_data.report[0].y,
+                           &video_x, &video_y) &&
+        M_VitaVideoToLogical(video_x, video_y,
+                             &logical_x, &logical_y))
+      vita_message_touch_inside = M_VitaVerifyTextHit(logical_x,
+                                                       logical_y);
+    return;
+  }
+
+  if (colorbox_active && setup_active)
+  {
+    vita_color_touch_armed = true;
+    vita_color_touch_x = -1;
+    vita_color_touch_y = -1;
+
+    if (M_VitaTouchToVideo(touch_data.report[0].x,
+                           touch_data.report[0].y,
+                           &video_x, &video_y) &&
+        M_VitaVideoToLogical(video_x, video_y,
+                             &logical_x, &logical_y) &&
+        M_VitaColorPaletteHit(logical_x, logical_y))
+    {
+      vita_color_touch_x =
+        (logical_x - COLORPALXORIG) / (CHIP_SIZE + 1);
+      vita_color_touch_y =
+        (logical_y - COLORPALYORIG) / (CHIP_SIZE + 1);
+    }
+    return;
+  }
+
+  if (setup_active)
+  {
+    /* Numeric/string/key editors retain their existing keyboard/button
+       semantics while they are active. */
+    if (setup_select || setup_gather || saveStringEnter)
+      return;
+
+    if (!M_VitaTouchToVideo(touch_data.report[0].x,
+                            touch_data.report[0].y,
+                            &video_x, &video_y) ||
+        !M_VitaVideoToLogical(video_x, video_y,
+                              &logical_x, &logical_y))
+      return;
+
+    vita_menu_touch_setup = true;
+    vita_menu_touch_setup_menu = current_setup_menu;
+    M_VitaUpdateTouchTarget(logical_x, logical_y);
+    return;
+  }
+
+  if (menuactive &&
+      M_VitaTouchToVideo(touch_data.report[0].x,
+                         touch_data.report[0].y,
+                         &video_x, &video_y) &&
+      M_VitaVideoToLogical(video_x, video_y,
+                           &logical_x, &logical_y))
+  {
+    vita_menu_touch_menu = currentMenu;
+    M_VitaUpdateTouchTarget(logical_x, logical_y);
+  }
+}
+#endif
+
 // phares 4/21/98:
 // Array of setup screens used by M_ResetDefaults()
 
@@ -4027,6 +5362,9 @@ static setup_menu_t **setup_screens[] =
   chat_settings,
   gen_settings,      // killough 10/98
   comp_settings,
+#ifdef __vita__
+  vita_features_settings,
+#endif
 };
 
 // phares 4/19/98:
@@ -4530,23 +5868,22 @@ void M_DrawHelp (void)
 ////////////////////////////////////////////////////////////////////////////
 
 enum {
-  prog,
-  prog_stub,
-  prog_stub1,
-  prog_stub2,
-  adcr
+  prog = 0,
+  vita = 6,
+  adcr = 9
 };
 
 enum {
   cr_prog=0,
-  cr_adcr=2,
+  cr_vita=0,
+  cr_adcr=0,
 };
 
-#define CR_S 9
+#define CR_S 8
 #define CR_X 20
 #define CR_X2 50
 #define CR_Y 32
-#define CR_SH 9
+#define CR_SH 8
 
 setup_menu_t cred_settings[]={
 
@@ -4556,6 +5893,9 @@ setup_menu_t cred_settings[]={
   {"Neil Stevens",S_SKIP|S_CREDIT|S_LEFTJUST,m_null, CR_X2, CR_Y + CR_S*(prog+3) + CR_SH*cr_prog},
   {"Andrey Budko",S_SKIP|S_CREDIT|S_LEFTJUST,m_null, CR_X2, CR_Y + CR_S*(prog+4) + CR_SH*cr_prog},
 
+  {"Updated Vita port credits",S_SKIP|S_CREDIT|S_LEFTJUST,m_null, CR_X, CR_Y + CR_S*vita + CR_SH*cr_vita},
+  {"Tony Fideo",S_SKIP|S_CREDIT|S_LEFTJUST,m_null, CR_X2, CR_Y + CR_S*(vita+1) + CR_SH*cr_vita},
+
   {"Additional Credit To",S_SKIP|S_CREDIT|S_LEFTJUST,m_null, CR_X, CR_Y + CR_S*adcr + CR_SH*cr_adcr},
   {"id Software for DOOM",S_SKIP|S_CREDIT|S_LEFTJUST,m_null, CR_X2, CR_Y + CR_S*(adcr+1)+CR_SH*cr_adcr},
   {"TeamTNT for BOOM",S_SKIP|S_CREDIT|S_LEFTJUST,m_null, CR_X2, CR_Y + CR_S*(adcr+2)+CR_SH*cr_adcr},
@@ -4564,7 +5904,9 @@ setup_menu_t cred_settings[]={
   {"Randy Heit for ZDOOM",S_SKIP|S_CREDIT|S_LEFTJUST,m_null, CR_X2, CR_Y + CR_S*(adcr+5)+CR_SH*cr_adcr},
   {"Michael 'Kodak' Ryssen for DOOMGL",S_SKIP|S_CREDIT|S_LEFTJUST,m_null, CR_X2, CR_Y + CR_S*(adcr+6)+CR_SH*cr_adcr},
   {"Jess Haas for lSDLDoom",S_SKIP|S_CREDIT|S_LEFTJUST,m_null, CR_X2, CR_Y + CR_S*(adcr+7) + CR_SH*cr_adcr},
-  {"all others who helped (see AUTHORS file)",S_SKIP|S_CREDIT|S_LEFTJUST,m_null, CR_X2, CR_Y + CR_S*(adcr+8)+CR_SH*cr_adcr},
+  {"FGSFDSFGS",S_SKIP|S_CREDIT|S_LEFTJUST,m_null, CR_X2, CR_Y + CR_S*(adcr+8)+CR_SH*cr_adcr},
+  {"RINNEGATAMANTE",S_SKIP|S_CREDIT|S_LEFTJUST,m_null, CR_X2, CR_Y + CR_S*(adcr+9)+CR_SH*cr_adcr},
+  {"all others who helped (see AUTHORS file)",S_SKIP|S_CREDIT|S_LEFTJUST,m_null, CR_X2, CR_Y + CR_S*(adcr+10)+CR_SH*cr_adcr},
 
   {0,S_SKIP|S_END,m_null}
 };
@@ -4583,7 +5925,7 @@ void M_DrawCredits(void)     // killough 10/98: credit screen
   {
     // Use V_DrawBackground here deliberately to force drawing a background
     V_DrawBackground(gamemode==shareware ? "CEIL5_1" : "MFLR8_4", 0);
-    M_DrawTitle(81, 9, "PRBOOM", CR_GOLD, PACKAGE_NAME " v" PACKAGE_VERSION, CR_GOLD);
+    M_DrawTitle(81, 9, "PRBOOM", CR_GOLD, PACKAGE_NAME " v" PACKAGE_DISPLAY_VERSION, CR_GOLD);
     M_DrawScreenItems(cred_settings);
   }
 }
@@ -4633,26 +5975,40 @@ dboolean M_Responder (event_t* ev) {
 
   ch = -1; // will be changed to a legit char if we're going to use it here
 
+#ifdef __vita__
+  /* The button used to accept the Vita IME can arrive as a normal controller
+     event after the common dialog has already finished.  Consume that one
+     raw menu-confirm alias before the menu translates it to another Enter. */
+  if (vita_ime_ignore_confirm && ev->type == ev_keydown &&
+      ev->data1 == key_menu_enter_alt)
+  {
+    vita_ime_ignore_confirm = false;
+    return true;
+  }
+#endif
+
   // Process joystick input
 
   if (ev->type == ev_joystick && joywait < I_GetTime())  {
-    if (ev->data3 == -1)
+    /* Analog movement events use a signed percentage, while digital mode
+     * still emits -1/0/+1. Menus only need the direction, not magnitude. */
+    if (ev->data3 < 0)
       {
   ch = key_menu_up;                                // phares 3/7/98
   joywait = I_GetTime() + 5;
       }
-    else if (ev->data3 == 1)
+    else if (ev->data3 > 0)
       {
   ch = key_menu_down;                              // phares 3/7/98
   joywait = I_GetTime() + 5;
       }
 
-    if (ev->data2 == -1)
+    if (ev->data2 < 0)
       {
   ch = key_menu_left;                              // phares 3/7/98
   joywait = I_GetTime() + 2;
       }
-    else if (ev->data2 == 1)
+    else if (ev->data2 > 0)
       {
   ch = key_menu_right;                             // phares 3/7/98
   joywait = I_GetTime() + 2;
@@ -4744,6 +6100,14 @@ dboolean M_Responder (event_t* ev) {
   }
 #endif
 
+#ifdef __vita__
+  /* The configured Vita back button is a no-op in the in-game root menu,
+     so make it close that pause menu just like Start. */
+  if (menuactive && gamestate == GS_LEVEL && currentMenu == &MainDef &&
+      ch == key_menu_backspace_alt)
+    ch = key_menu_escape;
+#endif
+
   /* The Vita SDL GameController backend reports buttons as KEYD_JOY_*
      events.  Keep the original menu key bindings while accepting the Vita
      aliases used by the original port. */
@@ -4764,6 +6128,22 @@ dboolean M_Responder (event_t* ev) {
   // Save Game string input
 
   if (saveStringEnter) {
+#ifdef __vita__
+    /* The first confirm arms the quick-save window. A second one commits the
+       generated/current name without opening the on-screen keyboard. */
+    if (vita_save_ime_waiting && ch == key_menu_enter)
+      {
+      vita_save_ime_waiting = false;
+      saveStringEnter = 0;
+      if (savegamestrings[saveSlot][0])
+        M_DoSave(saveSlot);
+      return true;
+      }
+
+    if (vita_save_ime_waiting)
+      vita_save_ime_waiting = false;
+#endif
+
     if (ch == key_menu_backspace)                            // phares 3/7/98
       {
       if (saveCharIndex > 0)
@@ -4775,12 +6155,18 @@ dboolean M_Responder (event_t* ev) {
 
       else if (ch == key_menu_escape)                    // phares 3/7/98
   {
+#ifdef __vita__
+    vita_save_ime_waiting = false;
+#endif
     saveStringEnter = 0;
     strcpy(&savegamestrings[saveSlot][0],saveOldString);
   }
 
       else if (ch == key_menu_enter)                     // phares 3/7/98
   {
+#ifdef __vita__
+    vita_save_ime_waiting = false;
+#endif
     saveStringEnter = 0;
     if (savegamestrings[saveSlot][0])
       M_DoSave(saveSlot);
@@ -4918,8 +6304,8 @@ dboolean M_Responder (event_t* ev) {
           useglgamma++;
           if (useglgamma > MAX_GLGAMMA)
             useglgamma = 0;
-          sprintf(str, "Gamma correction level %d", useglgamma); 
-          players[consoleplayer].message = str; 
+          sprintf(str, "Gamma correction level %d", useglgamma);
+          players[consoleplayer].message = str;
 
           gld_SetGammaRamp(useglgamma);
         }
@@ -4960,7 +6346,7 @@ dboolean M_Responder (event_t* ev) {
       }
 
     //e6y
-    if (ch == key_speed_default && (!netgame||demoplayback))               
+    if (ch == key_speed_default && (!netgame||demoplayback))
     {
       realtic_clock_rate = StepwiseSum(realtic_clock_rate, 0, speed_step, 3, 10000, 100);
       I_Init2();
@@ -5001,7 +6387,7 @@ dboolean M_Responder (event_t* ev) {
       if (G_ReloadLevel())
         return true;
     }
- 
+
     if (ch == key_demo_endlevel)
     {
       if (demoplayback && !doSkip && singledemo)
@@ -5184,7 +6570,7 @@ dboolean M_Responder (event_t* ev) {
 
       if (ptr1->action)      // killough 10/98
         ptr1->action();
-      
+
       //e6y
 #ifdef GL_DOOM
       {
@@ -5197,6 +6583,38 @@ dboolean M_Responder (event_t* ev) {
     M_SelectDone(ptr1);                           // phares 4/17/98
     return true;
     }
+
+#ifdef __vita__
+  if (ptr1->m_flags & S_SLIDER) // Vita percentage slider
+    {
+      if (ch == key_menu_left || ch == key_menu_right)
+        {
+          int position = M_VitaSliderPosition(ptr1,
+                                              *ptr1->var.def->location.pi);
+          int new_position = position;
+          int steps = M_VitaSliderSteps(ptr1);
+
+          if (ch == key_menu_left && new_position > 0)
+            new_position--;
+          else if (ch == key_menu_right &&
+                   new_position < steps - 1)
+            new_position++;
+
+          if (new_position != position)
+            {
+              *ptr1->var.def->location.pi =
+                M_VitaSliderValue(ptr1, new_position);
+              S_StartSound(NULL, sfx_pstop);
+              M_UpdateCurrent(ptr1->var.def);
+              if (ptr1->action)
+                ptr1->action();
+            }
+        }
+      else if (ch == key_menu_enter)
+        M_SelectDone(ptr1);
+      return true;
+    }
+#endif
 
   if (ptr1->m_flags & S_CRITEM)
     {
@@ -5281,7 +6699,7 @@ dboolean M_Responder (event_t* ev) {
     if (ch == key_menu_left) {
       if (ptr1->var.def->type == def_int) {
         int value = *ptr1->var.def->location.pi;
-      
+
         value = value - 1;
         if ((ptr1->var.def->minvalue != UL &&
              value < ptr1->var.def->minvalue))
@@ -5309,7 +6727,7 @@ dboolean M_Responder (event_t* ev) {
     if (ch == key_menu_right) {
       if (ptr1->var.def->type == def_int) {
         int value = *ptr1->var.def->location.pi;
-      
+
         value = value + 1;
         if ((ptr1->var.def->minvalue != UL &&
              value < ptr1->var.def->minvalue))
@@ -5686,6 +7104,23 @@ dboolean M_Responder (event_t* ev) {
         setup_gather = true;
         print_warning_about_changes = false;
         gather_count = 0;
+#ifdef __vita__
+        /* Keep the existing five-character editor contract. Use the extended
+           numeric layout for settings that may accept a negative value. */
+        if (!VitaIme_Start(ptr1->m_text, "",
+          (ptr1->var.def->minvalue == UL || ptr1->var.def->minvalue < 0)
+            ? SCE_IME_TYPE_EXTENDED_NUMBER
+            : SCE_IME_TYPE_NUMBER,
+          MAXGATHER))
+          lprintf(LO_ERROR, "M_Responder: could not open numeric IME for %s\n",
+                  ptr1->m_text);
+#endif
+      }
+    else if (flags & S_SLIDER)
+      {
+        // Sliders use left/right directly and never open the numeric editor.
+        setup_gather = false;
+        print_warning_about_changes = false;
       }
     else if (flags & S_COLOR)
       {
@@ -6078,7 +7513,12 @@ void M_Drawer (void)
   if (lumps_missing == 0)
     for (i=0;i<max;i++)
     {
-      if (currentMenu->menuitems[i].name[0])
+      if (currentMenu == &OptionsDef && i == mousesens)
+      {
+        const char *label = "CAMERA SENSITIVITY";
+        M_WriteText(x, y+8-(M_StringHeight(label)/2), label, CR_DEFAULT);
+      }
+      else if (currentMenu->menuitems[i].name[0])
         V_DrawNamePatch(x,y,0,currentMenu->menuitems[i].name,
             CR_DEFAULT, VPT_STRETCH);
       y += LINEHEIGHT;
@@ -6408,7 +7848,7 @@ void M_Init(void)
 
   M_InitHelpScreen();   // init the help screen       // phares 4/08/98
   M_InitExtendedHelp(); // init extended help screens // phares 3/30/98
-  
+
   //e6y
   M_ChangeSpeed();
   M_ChangeMaxViewPitch();

@@ -56,6 +56,10 @@
 
 #include "m_io.h"
 
+#ifdef __vita__
+#include <string.h>
+#endif
+
 #define TRUE 1
 #define FALSE 0
 
@@ -191,6 +195,86 @@ const char *s_MSGON       = MSGON;
 const char *s_NETEND      = NETEND;    // PRESSKEY;
 const char *s_ENDGAME     = ENDGAME;   // PRESSYN; // killough 4/4/98: end
 const char *s_DOSY        = DOSY;
+
+#ifdef __vita__
+static const char vita_endgame_cross[] =
+    "are you sure you want to end the game?\n\npress x.";
+static const char vita_endgame_circle[] =
+    "are you sure you want to end the game?\n\npress o.";
+static const char vita_dosy_cross[] = "(press x to quit)";
+static const char vita_dosy_circle[] = "(press o to quit)";
+static const char vita_pressyn_default[] = "press y or n.";
+static const char vita_pressyn_cross[] = "press x or o.";
+static const char vita_pressyn_circle[] = "press o or x.";
+static const char vita_qsprompt_default[] =
+    "quicksave over your game named\n\n'%s'?\n\npress y or n.";
+static const char vita_qsprompt_cross[] =
+    "quicksave over your game named\n\n'%s'?\n\npress x or o.";
+static const char vita_qsprompt_circle[] =
+    "quicksave over your game named\n\n'%s'?\n\npress o or x.";
+static const char vita_qlprompt_default[] =
+    "do you want to quickload the game named\n\n'%s'?\n\npress y or n.";
+static const char vita_qlprompt_cross[] =
+    "do you want to quickload the game named\n\n'%s'?\n\npress x or o.";
+static const char vita_qlprompt_circle[] =
+    "do you want to quickload the game named\n\n'%s'?\n\npress o or x.";
+static const char vita_restart_default[] =
+    "restart the level?\n\npress y or n.";
+static const char vita_restart_cross[] =
+    "restart the level?\n\npress x or o.";
+static const char vita_restart_circle[] =
+    "restart the level?\n\npress o or x.";
+static const char vita_nightmare_default[] =
+    "are you sure? this skill level\n"
+    "isn't even remotely fair.\n\npress y or n.";
+static const char vita_nightmare_cross[] =
+    "are you sure? this skill level\n"
+    "isn't even remotely fair.\n\npress x or o.";
+static const char vita_nightmare_circle[] =
+    "are you sure? this skill level\n"
+    "isn't even remotely fair.\n\npress o or x.";
+
+void D_ConfigureVitaButtonText(int circle_confirm)
+{
+  /* Do not overwrite a custom BEX/DEH translation.  Only the Vita defaults
+   * introduced by d_englsh.h are reordered. */
+  if (!strcmp(s_ENDGAME, vita_endgame_cross) ||
+      !strcmp(s_ENDGAME, vita_endgame_circle))
+    s_ENDGAME = circle_confirm ? vita_endgame_circle : vita_endgame_cross;
+
+  if (!strcmp(s_DOSY, vita_dosy_cross) ||
+      !strcmp(s_DOSY, vita_dosy_circle))
+    s_DOSY = circle_confirm ? vita_dosy_circle : vita_dosy_cross;
+
+  /* Keep the other confirmation dialogs consistent with the same logical
+   * button assignment.  These are only changed when they still contain the
+   * stock PrBoom strings, preserving custom language/BEX text. */
+  if (!strcmp(s_PRESSYN, vita_pressyn_default) ||
+      !strcmp(s_PRESSYN, vita_pressyn_cross) ||
+      !strcmp(s_PRESSYN, vita_pressyn_circle))
+    s_PRESSYN = circle_confirm ? vita_pressyn_circle : vita_pressyn_cross;
+
+  if (!strcmp(s_QSPROMPT, vita_qsprompt_default) ||
+      !strcmp(s_QSPROMPT, vita_qsprompt_cross) ||
+      !strcmp(s_QSPROMPT, vita_qsprompt_circle))
+    s_QSPROMPT = circle_confirm ? vita_qsprompt_circle : vita_qsprompt_cross;
+
+  if (!strcmp(s_QLPROMPT, vita_qlprompt_default) ||
+      !strcmp(s_QLPROMPT, vita_qlprompt_cross) ||
+      !strcmp(s_QLPROMPT, vita_qlprompt_circle))
+    s_QLPROMPT = circle_confirm ? vita_qlprompt_circle : vita_qlprompt_cross;
+
+  if (!strcmp(s_RESTARTLEVEL, vita_restart_default) ||
+      !strcmp(s_RESTARTLEVEL, vita_restart_cross) ||
+      !strcmp(s_RESTARTLEVEL, vita_restart_circle))
+    s_RESTARTLEVEL = circle_confirm ? vita_restart_circle : vita_restart_cross;
+
+  if (!strcmp(s_NIGHTMARE, vita_nightmare_default) ||
+      !strcmp(s_NIGHTMARE, vita_nightmare_cross) ||
+      !strcmp(s_NIGHTMARE, vita_nightmare_circle))
+    s_NIGHTMARE = circle_confirm ? vita_nightmare_circle : vita_nightmare_cross;
+}
+#endif
 const char *s_DETAILHI    = DETAILHI;
 const char *s_DETAILLO    = DETAILLO;
 const char *s_GAMMALVL0   = GAMMALVL0;

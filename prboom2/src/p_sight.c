@@ -38,6 +38,7 @@
 #include "p_maputl.h"
 #include "p_setup.h"
 #include "m_bbox.h"
+#include "m_misc.h"
 #include "lprintf.h"
 #include "g_overflow.h"
 #include "e6y.h" //e6y
@@ -55,6 +56,7 @@ This uses specialized forms of the maputils routines for optimized performance
 fixed_t sightzstart;            // eye z of looker
 fixed_t topslope, bottomslope;  // slopes to top and bottom of target
 int sightcounts[3];
+int checksight12;
 
 CrossSubsectorFunc P_CrossSubsector;
 
@@ -118,6 +120,11 @@ dboolean P_SightBlockLinesIterator(int x, int y)
   line_t *ld;
   int s1, s2;
   divline_t dl;
+
+  // A sight trace can touch a block outside the loaded blockmap at map
+  // boundaries. Do not dereference an invalid blockmap entry.
+  if (x < 0 || y < 0 || x >= bmapwidth || y >= bmapheight)
+    return true;
 
   offset = y*bmapwidth+x;
 
@@ -856,6 +863,12 @@ dboolean P_CheckSight(mobj_t *t1, mobj_t *t2)
 {
   const sector_t *s1, *s2;
   int pnum;
+
+  /* The Doom 1.2 path is substantially cheaper, but it has different edge
+   * behavior from the normal PrBoom sight calculation. Keep it opt-in and
+   * never let a launcher setting alter demos or netgames. */
+  if (checksight12 && !demoplayback && !demorecording && !netgame)
+    return P_CheckSight_12(t1, t2);
 
   if (compatibility_level == doom_12_compatibility)
   {

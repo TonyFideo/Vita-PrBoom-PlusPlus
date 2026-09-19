@@ -14,8 +14,8 @@ The old `texture_matrix` fork remains in `vita/vitaGL` only as a reference.
 
 ## Game data
 
-This project doesn't distribute Doom WADs. Put your IWAD inside `data/PrBoom++/iwads/`. PWADs go in
-`data/PrBoom++/pwads/` (It supports data files inside ux0/ur0/uma0).
+This project doesn't distribute Doom WADs. Put your IWAD inside `data/prboom/iwads/`. PWADs go in
+`data/prboom/pwads/` (It supports data files inside ux0/ur0/uma0).
 
 ## Vita build dependencies
 

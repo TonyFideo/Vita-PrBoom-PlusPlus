@@ -122,7 +122,7 @@ static int fl_init (int samplerate)
     int micro;
     fluid_version (&major, &minor, &micro);
     lprintf (LO_INFO, "Fluidplayer: Fluidsynth version %i.%i.%i\n", major, minor, micro);
-    if (major >= 2 || (minor >=1 && micro >= 4))
+    if (major >= 1 && minor >=1 && micro >= 4)
       sratemin = 8000;
     else
       sratemin = 22050;
@@ -136,13 +136,8 @@ static int fl_init (int samplerate)
 
   f_set = new_fluid_settings ();
 
-#if FLUIDSYNTH_VERSION_MAJOR == 1
   #define FSET(a,b,c) if (!fluid_settings_set##a(f_set,b,c))\
     lprintf (LO_INFO, "fl_init: Couldn't set " b "\n")
-#else
-  #define FSET(a,b,c) if (fluid_settings_set##a(f_set,b,c) == FLUID_FAILED)\
-    lprintf (LO_INFO, "fl_init: Couldn't set " b "\n")
-#endif
 
   FSET (num, "synth.sample-rate", f_soundrate);
 
@@ -166,16 +161,14 @@ static int fl_init (int samplerate)
   // gain control
   FSET (num, "synth.gain", mus_fluidsynth_gain / 100.0); // 0.0 - 0.2 - 10.0
   // behavior wrt bank select messages
-  FSET (str, "synth.midi-bank-select", "gs"); // fluidsynth default
-  // general midi spec says 24 voices, but modern midi songs use more
-  FSET (int, "synth.polyphony", 256); // fluidsynth default
+  FSET (str, "synth-midi-bank-select", "gm"); // general midi mode
+  // general midi spec says no more than 24 voices needed
+  FSET (int, "synth-polyphony", 24);
 
   // we're not using the builtin shell or builtin midiplayer,
   // and our own access to the synth is protected by mutex in i_sound.c
   FSET (int, "synth.threadsafe-api", 0);
-#if FLUIDSYNTH_VERSION_MAJOR == 1
   FSET (int, "synth.parallel-render", 0);
-#endif
 
   // prints debugging information to STDOUT
   //FSET (int, "synth.verbose", 1);
@@ -455,10 +448,7 @@ static void fl_render (void *vdest, unsigned length)
             // fix buggy songs that forget to terminate notes held over loop point
             // sdl_mixer does this as well
             for (i = 0; i < 16; i++)
-            {
               fluid_synth_cc (f_syn, i, 123, 0); // ALL NOTES OFF
-              fluid_synth_cc (f_syn, i, 121, 0); // RESET ALL CONTROLLERS
-            }
             continue;
           }
           // stop, write leadout
@@ -526,4 +516,3 @@ const music_player_t fl_player =
 
 
 #endif // HAVE_LIBFLUIDSYNTH
-

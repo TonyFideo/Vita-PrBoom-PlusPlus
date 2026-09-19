@@ -93,6 +93,8 @@ int main(void)
     // emergency launch in case we need to generate the config
     CheckDebugStart();
     if (CFG_Load()) I_Error("CFG_Load(): failed");
+    if (CFG_EnsureInt("checksight12", 0))
+        I_Error("CFG_EnsureInt(): failed");
     init_level++;
     if (UI_Init()) I_Error("UI_Init(): failed");
     init_level++;

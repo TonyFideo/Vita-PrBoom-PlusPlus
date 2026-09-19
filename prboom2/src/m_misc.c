@@ -158,6 +158,22 @@ int M_ReadFile(char const *name, byte **buffer)
 int usemouse;
 dboolean    precache = true; /* if true, load all graphics at start */
 
+#ifdef __vita__
+/* Vita Features settings. */
+int vita_gyro_aim;
+int vita_horizontal_sensitivity;
+int vita_joystick_movement_mode;
+int vita_left_stick_deadzone;
+int vita_left_stick_deadzone_amount;
+int vita_right_stick_deadzone;
+int vita_right_stick_deadzone_amount;
+int vita_minimum_sector_light;
+int vita_average_sector_light;
+int vita_color_saturation;
+int vita_show_fps;
+int vita_touch_inside_menu;
+#endif
+
 // The available anisotropic
 typedef enum {
   gl_anisotropic_off = 0,
@@ -297,6 +313,24 @@ extern const char* S_music_files[]; // cournia
 int map_point_coordinates;
 int map_level_stat;
 
+#ifdef __vita__
+#define PRBOOM_DEFAULT_KEY_FIRE       KEYD_JOY_R
+#define PRBOOM_DEFAULT_KEY_USE        KEYD_JOY_L
+#define PRBOOM_DEFAULT_KEY_SPEED      0
+#define PRBOOM_DEFAULT_KEY_MAP        KEYD_JOY_BACK
+#define PRBOOM_DEFAULT_KEY_NEXTWEAPON KEYD_JOY_B
+#define PRBOOM_DEFAULT_KEY_PREVWEAPON KEYD_JOY_X
+#define PRBOOM_DEFAULT_JOY_LOOKV      -1
+#else
+#define PRBOOM_DEFAULT_KEY_FIRE       KEYD_RCTRL
+#define PRBOOM_DEFAULT_KEY_USE        KEYD_SPACEBAR
+#define PRBOOM_DEFAULT_KEY_SPEED      KEYD_RSHIFT
+#define PRBOOM_DEFAULT_KEY_MAP        KEYD_TAB
+#define PRBOOM_DEFAULT_KEY_NEXTWEAPON KEYD_MWHEELUP
+#define PRBOOM_DEFAULT_KEY_PREVWEAPON KEYD_MWHEELDOWN
+#define PRBOOM_DEFAULT_JOY_LOOKV      3
+#endif
+
 default_t defaults[] =
 {
   //e6y
@@ -434,12 +468,11 @@ default_t defaults[] =
   {"pitched_sounds",{&pitched_sounds},{0},0,1, // killough 2/21/98
    def_bool,ss_none}, // enables variable pitch in sound effects (from id's original code)
   {"samplerate",{&snd_samplerate},{44100},11025,48000, def_int,ss_none},
-  {"slice_samplecount",{&snd_samplecount},{0},0,8192, def_int,ss_none},
   {"sfx_volume",{&snd_SfxVolume},{8},0,15, def_int,ss_none},
   {"music_volume",{&snd_MusicVolume},{8},0,15, def_int,ss_none},
   {"mus_pause_opt",{&mus_pause_opt},{1},0,2, // CPhipps - music pausing
    def_int, ss_none}, // 0 = kill music when paused, 1 = pause music, 2 = let music continue
-  {"snd_channels",{&default_numChannels},{MAX_CHANNELS},1,MAX_CHANNELS,
+  {"snd_channels",{&default_numChannels},{32},1,32,
    def_int,ss_none}, // number of audio events simultaneously // killough
 #ifdef _WIN32
 #elif defined(__vita__)
@@ -450,20 +483,10 @@ default_t defaults[] =
   {"snd_soundfont",{NULL, &snd_soundfont},{0,"/usr/share/sounds/sf3/default-GM.sf3"},UL,UL,def_str,ss_none}, // soundfont name for synths that support it
 #endif
   {"snd_mididev",{NULL, &snd_mididev},{0,""},UL,UL,def_str,ss_none}, // midi device to use for portmidiplayer and alsaplayer
-  {"lowpass_filter",{&lowpass_filter},{0},0,1,
-  def_bool,ss_none}, // low-pass filter borrowed from Chocolate Doom so upscaling old audio doesn't sound too horrible
-  {"full_sounds",{&full_sounds},{0},0,1,def_bool,ss_none}, // disable sound cutoffs
-
   {"mus_fluidsynth_chorus",{&mus_fluidsynth_chorus},{0},0,1,def_bool,ss_none},
   {"mus_fluidsynth_reverb",{&mus_fluidsynth_reverb},{0},0,1,def_bool,ss_none},
   {"mus_fluidsynth_gain",{&mus_fluidsynth_gain},{50},0,1000,def_int,ss_none}, // NSM  fine tune fluidsynth output level
   {"mus_opl_gain",{&mus_opl_gain},{50},0,1000,def_int,ss_none}, // NSM  fine tune opl output level
-  {"mus_portmidi_reset_type",{NULL, &mus_portmidi_reset_type},{0,"gm"},UL,UL,def_str,ss_none}, // portmidi reset type (none, gs, gm, gm2, xg)
-  {"mus_portmidi_reset_delay",{&mus_portmidi_reset_delay},{0},0,2000,def_int,ss_none}, // portmidi delay after reset (milliseconds)
-  {"mus_portmidi_filter_sysex",{&mus_portmidi_filter_sysex},{1},0,1,def_bool,ss_none}, // portmidi block sysex from midi files
-  {"mus_portmidi_reverb_level",{&mus_portmidi_reverb_level},{-1},-1,127,def_int,ss_none}, // portmidi reverb send level
-  {"mus_portmidi_chorus_level",{&mus_portmidi_chorus_level},{-1},-1,127,def_int,ss_none}, // portmidi chorus send level
-
   {"Video settings",{NULL},{0},UL,UL,def_none,ss_none},
 #ifdef GL_DOOM
 #if defined(_MSC_VER) || defined(__vita__)
@@ -474,8 +497,13 @@ default_t defaults[] =
 #else
   {"videomode",{NULL, &default_videomode},{0,"8bit"},UL,UL,def_str,ss_none},
 #endif
+#ifdef __vita__
+  /* Use a practical software-renderer default on Vita. */
+  {"screen_resolution",{NULL, &screen_resolution},{0,"480x272"},UL,UL,def_str,ss_none},
+#else
   /* 320x200 default resolution */
   {"screen_resolution",{NULL, &screen_resolution},{0,"320x200"},UL,UL,def_str,ss_none},
+#endif
   {"use_fullscreen",{&use_fullscreen},{1},0,1, /* proff 21/05/2000 */
    def_bool,ss_none},
   {"exclusive_fullscreen",{&exclusive_fullscreen},{0},0,1, // [FG] mode-changing fullscreen
@@ -667,13 +695,13 @@ default_t defaults[] =
   {"key_flydown", {&key_flydown}, {','},
    0,MAX_KEY,def_key,ss_keys}, // key to strafe right
 
-  {"key_fire",        {&key_fire},           {KEYD_RCTRL}     ,
+  {"key_fire",        {&key_fire},           {PRBOOM_DEFAULT_KEY_FIRE},
    0,MAX_KEY,def_key,ss_keys}, // duh
-  {"key_use",         {&key_use},            {' '}           ,
+  {"key_use",         {&key_use},            {PRBOOM_DEFAULT_KEY_USE},
    0,MAX_KEY,def_key,ss_keys}, // key to open a door, use a switch
   {"key_strafe",      {&key_strafe},         {KEYD_RALT}      ,
    0,MAX_KEY,def_key,ss_keys}, // key to use with arrows to strafe
-  {"key_speed",       {&key_speed},          {KEYD_RSHIFT}    ,
+  {"key_speed",       {&key_speed},          {PRBOOM_DEFAULT_KEY_SPEED},
    0,MAX_KEY,def_key,ss_keys}, // key to run
 
   {"key_savegame",    {&key_savegame},       {KEYD_F2}        ,
@@ -708,7 +736,7 @@ default_t defaults[] =
    0,MAX_KEY,def_key,ss_keys}, // backspace key
   {"key_enter",       {&key_enter},          {KEYD_ENTER}     ,
    0,MAX_KEY,def_key,ss_keys}, // key to select from menu or see last message
-  {"key_map",         {&key_map},            {KEYD_TAB}       ,
+  {"key_map",         {&key_map},            {PRBOOM_DEFAULT_KEY_MAP},
    0,MAX_KEY,def_key,ss_keys}, // key to toggle automap display
   {"key_map_right",   {&key_map_right},      {KEYD_RIGHTARROW},// phares 3/7/98
    0,MAX_KEY,def_key,ss_keys}, // key to shift automap right   //     |
@@ -773,9 +801,9 @@ default_t defaults[] =
    0,MAX_KEY,def_key,ss_keys}, // key to switch to weapon 8 (chainsaw)        //    |
   {"key_weapon9",     {&key_weapon9},         {'9'}            ,
    0,MAX_KEY,def_key,ss_keys}, // key to switch to weapon 9 (supershotgun)    // phares
-  {"key_nextweapon",  {&key_nextweapon},      {KEYD_MWHEELUP}  ,
+  {"key_nextweapon",  {&key_nextweapon},      {PRBOOM_DEFAULT_KEY_NEXTWEAPON},
    0,MAX_KEY,def_key,ss_keys}, // key to cycle to the next weapon
-  {"key_prevweapon",  {&key_prevweapon},      {KEYD_MWHEELDOWN},
+  {"key_prevweapon",  {&key_prevweapon},      {PRBOOM_DEFAULT_KEY_PREVWEAPON},
    0,MAX_KEY,def_key,ss_keys}, // key to cycle to the previous weapon
 
   // killough 2/22/98: screenshot key
@@ -788,7 +816,7 @@ default_t defaults[] =
   {"joyaxis_moveh",{&joyaxis_moveh},{0},-1,3,def_int,ss_none},
   {"joyaxis_movev",{&joyaxis_movev},{1},-1,3,def_int,ss_none},
   {"joyaxis_lookh",{&joyaxis_lookh},{2},-1,3,def_int,ss_none},
-  {"joyaxis_lookv",{&joyaxis_lookv},{3},-1,3,def_int,ss_none},
+  {"joyaxis_lookv",{&joyaxis_lookv},{PRBOOM_DEFAULT_JOY_LOOKV},-1,3,def_int,ss_none},
   {"joy_deadzone_left",{&joy_deadzone_left},{1},0,16,def_int,ss_none},
   {"joy_deadzone_right",{&joy_deadzone_right},{1},0,16,def_int,ss_none},
   {"joy_permastrafe",{&joy_permastrafe},{1},0,1,def_bool,ss_none},
@@ -1042,6 +1070,8 @@ default_t defaults[] =
    def_int,ss_stat},
 
   {"Prboom-plus misc settings",{NULL},{0},UL,UL,def_none,ss_none},
+  {"checksight12", {&checksight12}, {0},0,1,
+   def_bool,ss_none}, // experimental fast sight calculations
   {"showendoom", {&showendoom},  {0},0,1,
    def_bool,ss_stat},
   {"screenshot_dir", {NULL,&screenshot_dir}, {0,""},UL,UL,
@@ -1056,6 +1086,34 @@ default_t defaults[] =
    def_int,ss_stat},
   {"health_bar_green", {&health_bar_green}, {0},0,100,
    def_int,ss_stat},
+
+#ifdef __vita__
+  {"Vita features",{NULL},{0},UL,UL,def_none,ss_none},
+  {"vita_gyro_aim", {&vita_gyro_aim}, {0},0,1,
+   def_bool,ss_vita},
+  {"vita_horizontal_sensitivity", {&vita_horizontal_sensitivity}, {50},0,1000,
+   def_int,ss_vita},
+  {"vita_joystick_movement_mode", {&vita_joystick_movement_mode}, {1},0,1,
+   def_int,ss_vita},
+  {"vita_left_stick_deadzone", {&vita_left_stick_deadzone}, {1},0,1,
+   def_bool,ss_vita},
+  {"vita_left_stick_deadzone_amount", {&vita_left_stick_deadzone_amount}, {2},0,100,
+   def_int,ss_vita},
+  {"vita_right_stick_deadzone", {&vita_right_stick_deadzone}, {1},0,1,
+   def_bool,ss_vita},
+  {"vita_right_stick_deadzone_amount", {&vita_right_stick_deadzone_amount}, {2},0,100,
+   def_int,ss_vita},
+  {"vita_minimum_sector_light", {&vita_minimum_sector_light}, {0},0,100,
+   def_int,ss_vita},
+  {"vita_average_sector_light", {&vita_average_sector_light}, {0},0,50,
+   def_int,ss_vita},
+  {"vita_color_saturation", {&vita_color_saturation}, {100},0,200,
+   def_int,ss_vita},
+  {"vita_show_fps", {&vita_show_fps}, {0},0,1,
+   def_bool,ss_vita},
+  {"vita_touch_inside_menu", {&vita_touch_inside_menu}, {1},0,1,
+   def_bool,ss_vita},
+#endif
 
   // NSM
   {"Video capture encoding settings",{NULL},{0},UL,UL,def_none,ss_none},
@@ -1080,7 +1138,7 @@ default_t defaults[] =
   {"render_wipescreen", {&render_wipescreen},  {1},0,1,
    def_bool,ss_stat},
 #ifdef __vita__
-  {"render_screen_multiply", {&render_screen_multiply},  {1},-2,2,
+  {"render_screen_multiply", {&render_screen_multiply},  {-1},-2,2,
 #else
   {"render_screen_multiply", {&render_screen_multiply},  {1},1,5,
 #endif

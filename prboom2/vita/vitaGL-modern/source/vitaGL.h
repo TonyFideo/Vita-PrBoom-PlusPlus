@@ -1245,6 +1245,9 @@ void vglSetDisplayBufferCount(int count);
 // Setup a callback executed everytime a new frame is sent to the display. Useful to setup a CPU rendered overlay on-screen.
 void vglSetDisplayCallback(void (*cb)(void *framebuf));
 
+// Set the color saturation factor used by VitaGL's fixed-function fragment shaders. 1.0f is neutral.
+void vglSetColorSaturation(float saturation);
+
 // Setup the fragment ring buffer size of sceGxm. Must be called before vglInit*. Default value: SCE_GXM_DEFAULT_FRAGMENT_RING_BUFFER_SIZE.
 void vglSetFragmentBufferSize(uint32_t size);
 

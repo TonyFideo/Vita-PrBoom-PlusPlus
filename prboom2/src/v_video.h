@@ -42,6 +42,14 @@
 // Needed because we are refering to patches.
 #include "r_data.h"
 
+/* Vita software rendering uses a transposed framebuffer so a whole Doom
+ * column is contiguous in memory. OpenGL/VitaGL keeps its normal path. */
+#if defined(__vita__)
+#define V_TRANSPOSED_SOFTWARE 1
+#else
+#define V_TRANSPOSED_SOFTWARE 0
+#endif
+
 //
 // VIDEO
 //
@@ -79,6 +87,23 @@ typedef struct stretch_param_s
 
 extern stretch_param_t stretch_params_table[3][VPT_ALIGN_MAX];
 extern stretch_param_t *stretch_params;
+
+/* Full-screen page scaling is separate from the gameplay HUD scaling. */
+enum page_stretch_mode_e
+{
+  PAGE_STRETCH_ASPECT,
+  PAGE_STRETCH_INTEGER,
+  PAGE_STRETCH_FULL,
+  PAGE_STRETCH_MAX
+};
+
+extern stretch_param_t page_stretch_params_table[PAGE_STRETCH_MAX][VPT_ALIGN_MAX];
+extern int page_stretch_active;
+extern int page_stretch_mode;
+
+stretch_param_t *V_GetStretchParams(enum patch_translation_e flags);
+void V_BeginPageStretch(void);
+void V_EndPageStretch(void);
 
 extern cb_video_t video;
 extern cb_video_t video_stretch;
@@ -256,6 +281,11 @@ extern V_DrawBackground_f V_DrawBackground;
 void V_DestroyUnusedTrueColorPalettes(void);
 // CPhipps - function to set the palette to palette number pal.
 void V_SetPalette(int pal);
+
+#ifdef __vita__
+// Apply the Vita Features saturation setting to one RGB color.
+void V_ApplyColorSaturation(byte *r, byte *g, byte *b);
+#endif
 
 // Alt-Enter: fullscreen <-> windowed
 void V_ToggleFullscreen(void);

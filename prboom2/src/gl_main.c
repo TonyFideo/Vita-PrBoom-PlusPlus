@@ -71,6 +71,9 @@
 #include "st_stuff.h"
 #include "hu_stuff.h"
 #include "e6y.h"//e6y
+#ifdef __vita__
+#include "gl_saturation.h"
+#endif
 
 // All OpenGL extentions will be disabled in gl_compatibility mode
 int gl_compatibility = 0;
@@ -424,6 +427,7 @@ void gld_Init(int width, int height)
   //e6y
   glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 #ifdef __vita__
+  VitaSaturation_Init();
   // Do a couple dummy frames so there is something in the framebuffer.
   // This is the scene/present sequence used by the original Vita port.
   I_StartRendering();
@@ -702,7 +706,7 @@ void gld_DrawNumPatch_f(float x, float y, int lump, int cm, enum patch_translati
 
   if (flags & VPT_STRETCH_MASK)
   {
-    stretch_param_t *params = &stretch_params[flags & VPT_ALIGN_MASK];
+    stretch_param_t *params = V_GetStretchParams(flags);
 
     xpos   = (float)((x - leftoffset) * params->video->width)  / 320.0f + params->deltax1;
     ypos   = (float)((y - topoffset)  * params->video->height) / 200.0f + params->deltay1;

@@ -233,11 +233,13 @@ static void gld_InitLightTable_fogbased(void)
 
 static float gld_CalcLightLevel_glboom(int lightlevel)
 {
+  lightlevel = R_ApplyMinimumSectorLight(lightlevel);
   return lighttable_glboom[usegamma][BETWEEN(0, 255, lightlevel)];
 }
 
 static float gld_CalcLightLevel_gzdoom(int lightlevel)
 {
+  lightlevel = R_ApplyMinimumSectorLight(lightlevel);
   return lighttable_gzdoom[BETWEEN(0, 255, lightlevel)];
 }
 
@@ -250,15 +252,19 @@ static float gld_CalcLightLevel_fogbased(int lightlevel)
     if (extralight)
       return lighttable_fogbased[255];
     else
+    {
+      lightlevel = R_ApplyMinimumSectorLight(lightlevel);
       return lighttable_fogbased[BETWEEN(0, 255, lightlevel)];
+    }
   }
 }
 
 static float gld_CalcLightLevel_shaders(int lightlevel)
 {
   int light;
-  
-  light = BETWEEN(0, 255, lightlevel);
+
+  light = R_ApplyMinimumSectorLight(lightlevel);
+  light = BETWEEN(0, 255, light);
 
   return (float)light/255.0f;
 }
@@ -382,6 +388,7 @@ static float gld_CalcFogDensity_gzdoom(sector_t *sector, int lightlevel, GLDrawI
   }
   else
   {
+    lightlevel = R_ApplyMinimumSectorLight(lightlevel);
     return distfogtable[1][BETWEEN(0, 255, lightlevel)];
   }
 }
@@ -394,7 +401,10 @@ static float gld_CalcFogDensity_fogbased(sector_t *sector, int lightlevel, GLDra
   }
   else
   {
-    float fog = distfogtable[2][BETWEEN(0, 255, lightlevel)];
+    float fog;
+
+    lightlevel = R_ApplyMinimumSectorLight(lightlevel);
+    fog = distfogtable[2][BETWEEN(0, 255, lightlevel)];
     
     if (extralight)
     {

@@ -50,6 +50,14 @@
 #define TEMPBUF int_tempbuf
 #endif
 
+#if V_TRANSPOSED_SOFTWARE
+#define R_FLUSH_DEST(x, y) (drawvars.TOPLEFT + (x) * drawvars.PITCH + (y))
+#define R_FLUSH_ADVANCE(dest) (++(dest))
+#else
+#define R_FLUSH_DEST(x, y) (drawvars.TOPLEFT + (y) * drawvars.PITCH + (x))
+#define R_FLUSH_ADVANCE(dest) ((dest) += drawvars.PITCH)
+#endif
+
 #if (R_DRAWCOLUMN_PIPELINE & RDC_TRANSLUCENT)
 #define GETDESTCOLOR8(col1, col2) (temptranmap[((col1)<<8)+(col2)])
 #define GETDESTCOLOR15(col1, col2) (GETBLENDED15_3268((col1), (col2)))
@@ -106,7 +114,7 @@ static void R_FLUSHWHOLE_FUNCNAME(void)
    {
       yl     = tempyl[temp_x];
       source = &TEMPBUF[temp_x + (yl << 2)];
-      dest   = drawvars.TOPLEFT + yl*drawvars.PITCH + startx + temp_x;
+      dest   = R_FLUSH_DEST(startx + temp_x, yl);
       count  = tempyh[temp_x] - yl + 1;
       
       while(--count >= 0)
@@ -125,7 +133,7 @@ static void R_FLUSHWHOLE_FUNCNAME(void)
 #endif
 
          source += 4;
-         dest += drawvars.PITCH;
+         R_FLUSH_ADVANCE(dest);
       }
    }
 }
@@ -153,7 +161,7 @@ static void R_FLUSHHEADTAIL_FUNCNAME(void)
       if(yl < commontop)
       {
          source = &TEMPBUF[colnum + (yl << 2)];
-         dest   = drawvars.TOPLEFT + yl*drawvars.PITCH + startx + colnum;
+         dest   = R_FLUSH_DEST(startx + colnum, yl);
          count  = commontop - yl;
          
          while(--count >= 0)
@@ -173,7 +181,7 @@ static void R_FLUSHHEADTAIL_FUNCNAME(void)
 #endif
 
             source += 4;
-            dest += drawvars.PITCH;
+            R_FLUSH_ADVANCE(dest);
          }
       }
       
@@ -181,7 +189,7 @@ static void R_FLUSHHEADTAIL_FUNCNAME(void)
       if(yh > commonbot)
       {
          source = &TEMPBUF[colnum + ((commonbot + 1) << 2)];
-         dest   = drawvars.TOPLEFT + (commonbot + 1)*drawvars.PITCH + startx + colnum;
+         dest   = R_FLUSH_DEST(startx + colnum, commonbot + 1);
          count  = yh - commonbot;
          
          while(--count >= 0)
@@ -201,7 +209,7 @@ static void R_FLUSHHEADTAIL_FUNCNAME(void)
 #endif
 
             source += 4;
-            dest += drawvars.PITCH;
+            R_FLUSH_ADVANCE(dest);
          }
       }         
       ++colnum;
@@ -211,7 +219,14 @@ static void R_FLUSHHEADTAIL_FUNCNAME(void)
 static void R_FLUSHQUAD_FUNCNAME(void)
 {
    SCREENTYPE *source = &TEMPBUF[commontop << 2];
+#if V_TRANSPOSED_SOFTWARE
+   SCREENTYPE *dest0 = R_FLUSH_DEST(startx + 0, commontop);
+   SCREENTYPE *dest1 = R_FLUSH_DEST(startx + 1, commontop);
+   SCREENTYPE *dest2 = R_FLUSH_DEST(startx + 2, commontop);
+   SCREENTYPE *dest3 = R_FLUSH_DEST(startx + 3, commontop);
+#else
    SCREENTYPE *dest = drawvars.TOPLEFT + commontop*drawvars.PITCH + startx;
+#endif
    int count;
 #if (R_DRAWCOLUMN_PIPELINE & RDC_FUZZ)
    int fuzz1, fuzz2, fuzz3, fuzz4;
@@ -225,6 +240,20 @@ static void R_FLUSHQUAD_FUNCNAME(void)
    count = commonbot - commontop + 1;
 
 #if (R_DRAWCOLUMN_PIPELINE & RDC_TRANSLUCENT)
+#if V_TRANSPOSED_SOFTWARE
+   while(--count >= 0)
+   {
+      dest0[0] = GETDESTCOLOR(dest0[0], source[0]);
+      dest1[0] = GETDESTCOLOR(dest1[0], source[1]);
+      dest2[0] = GETDESTCOLOR(dest2[0], source[2]);
+      dest3[0] = GETDESTCOLOR(dest3[0], source[3]);
+      source += 4;
+      dest0++;
+      dest1++;
+      dest2++;
+      dest3++;
+   }
+#else
    while(--count >= 0)
    {
       dest[0] = GETDESTCOLOR(dest[0], source[0]);
@@ -234,7 +263,25 @@ static void R_FLUSHQUAD_FUNCNAME(void)
       source += 4 * sizeof(byte);
       dest += drawvars.PITCH * sizeof(byte);
    }
+#endif
 #elif (R_DRAWCOLUMN_PIPELINE & RDC_FUZZ)
+#if V_TRANSPOSED_SOFTWARE
+   while(--count >= 0)
+   {
+      dest0[0] = GETDESTCOLOR(dest0[fuzzoffset[fuzz1]]);
+      dest1[0] = GETDESTCOLOR(dest1[fuzzoffset[fuzz2]]);
+      dest2[0] = GETDESTCOLOR(dest2[fuzzoffset[fuzz3]]);
+      dest3[0] = GETDESTCOLOR(dest3[fuzzoffset[fuzz4]]);
+      fuzz1 = (fuzz1 + 1) % FUZZTABLE;
+      fuzz2 = (fuzz2 + 1) % FUZZTABLE;
+      fuzz3 = (fuzz3 + 1) % FUZZTABLE;
+      fuzz4 = (fuzz4 + 1) % FUZZTABLE;
+      dest0++;
+      dest1++;
+      dest2++;
+      dest3++;
+   }
+#else
    while(--count >= 0)
    {
       dest[0] = GETDESTCOLOR(dest[0 + fuzzoffset[fuzz1]]);
@@ -247,6 +294,21 @@ static void R_FLUSHQUAD_FUNCNAME(void)
       fuzz4 = (fuzz4 + 1) % FUZZTABLE;
       source += 4 * sizeof(byte);
       dest += drawvars.PITCH * sizeof(byte);
+   }
+#endif
+#else
+#if V_TRANSPOSED_SOFTWARE
+   while(--count >= 0)
+   {
+      dest0[0] = source[0];
+      dest1[0] = source[1];
+      dest2[0] = source[2];
+      dest3[0] = source[3];
+      source += 4;
+      dest0++;
+      dest1++;
+      dest2++;
+      dest3++;
    }
 #else
   #if (R_DRAWCOLUMN_PIPELINE_BITS == 8)
@@ -280,6 +342,7 @@ static void R_FLUSHQUAD_FUNCNAME(void)
    }
   #endif
 #endif
+#endif
 }
 
 #undef GETDESTCOLOR32
@@ -298,3 +361,5 @@ static void R_FLUSHQUAD_FUNCNAME(void)
 #undef R_FLUSHWHOLE_FUNCNAME
 #undef R_FLUSHHEADTAIL_FUNCNAME
 #undef R_FLUSHQUAD_FUNCNAME
+#undef R_FLUSH_ADVANCE
+#undef R_FLUSH_DEST

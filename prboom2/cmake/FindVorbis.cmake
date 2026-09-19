@@ -67,10 +67,13 @@ mark_as_advanced( VORBIS_LIBRARY )
 
 
 
-# handle the QUIETLY and REQUIRED arguments and set VORBISFILE_FOUND to TRUE if 
-# all listed variables are TRUE
+# handle the QUIETLY and REQUIRED arguments and set VORBIS_FOUND to TRUE only
+# when the decoder actually has all of its static-library dependencies.
 include( ${CMAKE_ROOT}/Modules/FindPackageHandleStandardArgs.cmake )
-FIND_PACKAGE_HANDLE_STANDARD_ARGS( Vorbis DEFAULT_MSG VORBIS_LIBRARY VORBIS_INCLUDE_DIR )
+FIND_PACKAGE_HANDLE_STANDARD_ARGS(
+  Vorbis DEFAULT_MSG
+  VORBISFILE_LIBRARY VORBIS_LIBRARY VORBIS_INCLUDE_DIR OGG_LIBRARY
+)
 
 set( VORBIS_LIBRARIES ${VORBISFILE_LIBRARY} ${VORBIS_LIBRARY} ${OGG_LIBRARIES} )
 set( VORBIS_INCLUDE_DIRS ${VORBIS_INCLUDE_DIR} ${OGG_INCLUDE_DIRS} )

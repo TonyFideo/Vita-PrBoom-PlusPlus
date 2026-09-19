@@ -123,6 +123,10 @@ extern const char *s_ENDGAME; // = ENDGAME;
 //#define DOSY          "(press y to quit)"
 extern const char *s_DOSY; // = DOSY;
 
+#ifdef __vita__
+void D_ConfigureVitaButtonText(int circle_confirm);
+#endif
+
 //#define DETAILHI      "High detail"
 extern const char *s_DETAILHI; // = DETAILHI;
 //#define DETAILLO      "Low detail"

@@ -222,7 +222,8 @@ static fixed_t R_ScaleFromGlobalAngle(angle_t visangle)
 
 const lighttable_t** GetLightTable(int lightlevel)
 {
-  int lightnum = (lightlevel >> LIGHTSEGSHIFT) + (extralight * LIGHTBRIGHT);
+  int lightnum = (R_ApplyMinimumSectorLight(lightlevel) >> LIGHTSEGSHIFT)
+               + (extralight * LIGHTBRIGHT);
 
   /* cph - ...what is this for? adding contrast to rooms?
    * It looks crap in outdoor areas */

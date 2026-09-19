@@ -2619,7 +2619,7 @@ void HU_Drawer(void)
 #ifdef __vita__
   // Keep a fixed three-digit width so an older value cannot leave stale
   // glyphs behind when the measured rate changes.
-  if (gamestate == GS_LEVEL)
+  if (vita_show_fps && gamestate == GS_LEVEL)
   {
     sprintf(hud_fpsstr, "FPS:%03d", I_GetFPS());
     HUlib_clearTextLine(&w_fps);
@@ -2641,6 +2641,13 @@ void HU_Drawer(void)
 //
 void HU_Erase(void)
 {
+#ifdef __vita__
+  // The FPS widget lives outside the normal message widgets. Erase its
+  // previous line so disabling it from Vita Features also removes the last
+  // value when the view is reduced.
+  HUlib_eraseTextLine(&w_fps);
+#endif
+
   // erase the message display or the message review display
   if (!message_list)
     HUlib_eraseSText(&w_message);

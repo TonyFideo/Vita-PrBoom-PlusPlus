@@ -42,6 +42,7 @@ void R_Clear(unsigned c);
 
 void R_PrintScaled(int flags, int x, int y, float s, unsigned c, const char *fmt, ...);
 #define R_Print(f, x, y, c, ...) R_PrintScaled((f), (x), (y), 1.f, (c), __VA_ARGS__)
+int R_TextWidth(float s, const char *text);
 
 void R_DrawButton(int x, int y, unsigned c, int button);
 void R_DrawRect(int x, int y, int w, int h, unsigned c);

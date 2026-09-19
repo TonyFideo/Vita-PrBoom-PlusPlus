@@ -12,8 +12,8 @@ void UI_MenuMain_Draw(void);
 struct Menu ui_menu_main =
 {
     MENU_MAIN,
-    "Profile",
-    "Select profile",
+    "WAD selection",
+    "Select a IWAD",
     NULL, 0, 0, 0,
     UI_MenuMain_Init,
     UI_MenuMain_Update,
@@ -55,7 +55,7 @@ void UI_MenuMain_Update(void)
         UI_ReloadOptions();
     }
 
-    if (IN_ButtonPressed(B_CROSS))
+    if (IN_ConfirmPressed())
     {
         UI_SaveOptions();
         CFG_Save();

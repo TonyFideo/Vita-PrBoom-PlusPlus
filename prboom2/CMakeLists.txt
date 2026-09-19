@@ -39,9 +39,12 @@ set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/../depen
 
 set(PACKAGE_NAME "${PROJECT_NAME}")
 set(PACKAGE_TARNAME "prboom-plus")
+# Keep the numeric package version for compatibility parsing, while exposing
+# the Vita release identifier in user-facing strings.
 set(PACKAGE_VERSION "${PROJECT_VERSION}")
+set(PACKAGE_DISPLAY_VERSION "2.6.66-1.0")
 set(PACKAGE_HOMEPAGE "${PROJECT_HOMEPAGE_URL}")
-set(PACKAGE_STRING "${PROJECT_NAME} ${PROJECT_VERSION}")
+set(PACKAGE_STRING "${PROJECT_NAME} ${PACKAGE_DISPLAY_VERSION}")
 
 # Vita things
 if(VITA)
@@ -109,20 +112,11 @@ if(WITH_IMAGE)
 endif()
 
 option(WITH_MIXER "Use SDL2_mixer if available" ON)
-if(WITH_MIXER AND NOT VITA)
+if(WITH_MIXER)
     find_package(SDL2_mixer)
     if(SDL2_MIXER_FOUND)
         set(HAVE_LIBSDL2_MIXER TRUE)
     endif()
-elseif(VITA)
-    # Vita uses the raw SDL callback together with the experimental music
-    # backend. Do not enable SDL2_mixer here: its modplug decoder is linked
-    # into the Vita executable and can be entered during level start.
-    set(WITH_MIXER OFF CACHE BOOL "Use SDL2_mixer if available" FORCE)
-    set(SDL2_MIXER_FOUND FALSE)
-    unset(SDL2_MIXER_LIBRARIES)
-    unset(SDL2_MIXER_INCLUDE_DIRS)
-    set(HAVE_LIBSDL2_MIXER FALSE)
 endif()
 
 option(WITH_NET "Use SDL2_net if available" ON)
@@ -158,19 +152,45 @@ if(WITH_MAD)
     endif()
 endif()
 
+# VitaSDK provides mpg123, while it does not provide libmad.  Keep the
+# existing libmad backend for desktop builds and use a dedicated mpg123
+# backend for Vita instead of pretending the two APIs are interchangeable.
+option(WITH_MPG123 "Use mpg123 for the Vita MP3 player if available" ON)
+if(WITH_MPG123 AND VITA)
+    find_package(Mpg123)
+    if(MPG123_FOUND)
+        set(HAVE_LIBMPG123 TRUE)
+        message(STATUS "Vita mpg123 MP3 player: enabled")
+    else()
+        message(STATUS "Vita mpg123 MP3 player: unavailable")
+    endif()
+endif()
+
 option(WITH_FLUIDSYNTH "Use FluidSynth if available" ON)
 if(WITH_FLUIDSYNTH)
     find_package(FluidSynth)
     if(FLUIDSYNTH_FOUND)
         set(HAVE_LIBFLUIDSYNTH TRUE)
+        message(STATUS "FluidSynth MIDI player: enabled")
+    else()
+        message(STATUS "FluidSynth MIDI player: unavailable")
     endif()
 endif()
 
 option(WITH_DUMB "Use DUMB if available" ON)
 if(WITH_DUMB)
-    find_package(DUMB)
-    if(DUMB_FOUND)
+    if(VITA)
+        # The VitaSDK does not ship libdumb.  Build the vendored DUMB source
+        # as a static target instead of treating the feature as unavailable.
+        set(DUMB_FOUND TRUE)
         set(HAVE_LIBDUMB TRUE)
+        set(DUMB_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/dumb/include")
+        message(STATUS "DUMB tracker player: enabled (vendored Vita build)")
+    else()
+        find_package(DUMB)
+        if(DUMB_FOUND)
+            set(HAVE_LIBDUMB TRUE)
+        endif()
     endif()
 endif()
 
@@ -179,6 +199,9 @@ if(WITH_VORBISFILE)
     find_package(Vorbis)
     if(VORBIS_FOUND)
         set(HAVE_LIBVORBISFILE TRUE)
+        message(STATUS "Vorbis/Ogg music player: enabled")
+    else()
+        message(STATUS "Vorbis/Ogg music player: unavailable")
     endif()
 endif()
 
@@ -203,10 +226,13 @@ endif()
 # with -DVITA_PRBOOM_DIAGNOSTICS=OFF.
 option(VITA_PRBOOM_DIAGNOSTICS "Log Vita GL scene and WAD rendering diagnostics" ON)
 
+# Keep the profiling instrumentation and its launcher control in sync.  When
+# disabled, VitaGL is built without HAVE_PROFILING and the launcher omits the
+# Profiling option instead of exposing a setting that cannot do anything.
+option(VITA_GL_PROFILING "Build VitaGL profiling instrumentation and expose its launcher option" ON)
+
 if(VITA)
-    # The modern VitaGL tree is kept beside the old texture_matrix fork.  The
-    # latter remains available as a reference, but must not be selected by the
-    # build of this migration branch.
+    # Use the modern VitaGL source bundled with this Vita build.
     set(VITAGL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vita/vitaGL-modern)
     set(VITASHARK_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vita/vitaShaRK)
     set(VITAGL_LIBRARY ${VITAGL_DIR}/libvitaGL.a)
@@ -234,8 +260,12 @@ if(VITA)
     if(VITA_PRBOOM_DIAGNOSTICS)
         set(VITA_GL_DIAGNOSTICS_ARG VITA_GL_DIAGNOSTICS=1)
     endif()
+    set(VITA_GL_PROFILING_ARG)
+    if(VITA_GL_PROFILING)
+        set(VITA_GL_PROFILING_ARG HAVE_PROFILING=1)
+    endif()
     add_custom_target(build_vitaGL ALL
-                   COMMAND make ENABLE_LEGACY_PIPELINE=1 HAVE_SHARK_LOG=1 LOG_ERRORS=1 HAVE_PROFILING=1 ${VITA_GL_DIAGNOSTICS_ARG} NO_SPLASHSCREEN=1 NO_TILE_CLIPPER=1
+                   COMMAND make ENABLE_LEGACY_PIPELINE=1 HAVE_SHARK_LOG=1 LOG_ERRORS=1 ${VITA_GL_PROFILING_ARG} ${VITA_GL_DIAGNOSTICS_ARG} NO_SPLASHSCREEN=1 NO_TILE_CLIPPER=1
                    WORKING_DIRECTORY ${VITAGL_DIR}
                    BYPRODUCTS ${VITAGL_LIBRARY}
                    DEPENDS build_vitaShaRK
@@ -333,5 +363,8 @@ endif()
 if(VITA)
     add_subdirectory(vita/libtess)
     add_subdirectory(vita/launcher)
+    if(WITH_DUMB)
+        add_subdirectory(thirdparty/dumb EXCLUDE_FROM_ALL)
+    endif()
 endif()
 add_subdirectory(src)

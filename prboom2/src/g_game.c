@@ -57,6 +57,7 @@
 #include "m_menu.h"
 #include "m_random.h"
 #include "p_setup.h"
+#include "p_mobj.h"
 #include "p_saveg.h"
 #include "p_tick.h"
 #include "p_map.h"
@@ -85,6 +86,7 @@
 #include "i_system.h"
 #ifdef __vita__
 #include "i_video.h"
+#include "vita_buttons.h"
 #endif
 #include "r_demo.h"
 #include "r_fps.h"
@@ -213,6 +215,33 @@ int     key_strafe;
 int     key_speed;
 int     key_escape = KEYD_ESCAPE;                           // phares 4/13/98
 int     key_escape_alt = KEYD_JOY_START;
+
+#ifdef __vita__
+void G_ConfigureVitaMenuButtons(void)
+{
+  int circle_confirm = VitaButtons_IsCircleConfirm();
+  int query_result = VitaButtons_GetQueryResult();
+
+  /* These are menu aliases only.  The gameplay action bindings (fire, use,
+   * movement, camera and weapons) remain unchanged. */
+  if (circle_confirm)
+  {
+    key_menu_enter_alt = KEYD_JOY_B;
+    key_menu_backspace_alt = KEYD_JOY_A;
+  }
+  else
+  {
+    key_menu_enter_alt = KEYD_JOY_A;
+    key_menu_backspace_alt = KEYD_JOY_B;
+  }
+
+  D_ConfigureVitaButtonText(circle_confirm);
+  lprintf(LO_INFO,
+          "Vita menu buttons: %s confirm, opposite button back (%s); gameplay bindings unchanged\n",
+          circle_confirm ? "Circle" : "Cross",
+          query_result >= 0 ? "system setting" : "Cross fallback");
+}
+#endif
 int     key_savegame;                                               // phares
 int     key_loadgame;                                               //    |
 int     key_autorun;                                                //    V
@@ -343,6 +372,29 @@ static int   dclicks;
 static int   dclicktime2;
 static int   dclickstate2;
 static int   dclicks2;
+
+#ifdef __vita__
+/* Horizontal Vita gyro input is kept separate from mouse and stick input.
+ * This prevents mouse acceleration, strafing mode, and right-stick deadzone
+ * handling from changing the behavior of the gyro aim. */
+static int vita_gyro_turn;
+
+/* The Vita SDL joystick path reports the left stick in a signed percentage
+ * range when analog movement is enabled. Convert that percentage into the
+ * same command units used by the existing walk/run movement tables. */
+static int VitaScaleJoystickAxis(int axis_value, int maximum)
+{
+  int magnitude;
+
+  if (axis_value < -100)
+    axis_value = -100;
+  else if (axis_value > 100)
+    axis_value = 100;
+
+  magnitude = (abs(axis_value) * maximum + 50) / 100;
+  return axis_value < 0 ? -magnitude : magnitude;
+}
+#endif
 
 // joystick values are repeated
 static int   joyxmove;
@@ -541,10 +593,17 @@ void G_BuildTiccmd(ticcmd_t* cmd)
         side += sidemove[speed];
       if (gamekeydown[key_left] || mousebuttons[mousebturnleft])
         side -= sidemove[speed];
+#ifdef __vita__
+      if (vita_joystick_movement_mode)
+        side += VitaScaleJoystickAxis(joyxmove, sidemove[1]);
+      else
+#endif
+      {
       if (joyxmove > 0)
         side += sidemove[speed];
       if (joyxmove < 0)
         side -= sidemove[speed];
+      }
     }
   else
     {
@@ -552,20 +611,34 @@ void G_BuildTiccmd(ticcmd_t* cmd)
         cmd->angleturn -= angleturn[tspeed];
       if (gamekeydown[key_left] || mousebuttons[mousebturnleft])
         cmd->angleturn += angleturn[tspeed];
+#ifdef __vita__
+      if (vita_joystick_movement_mode)
+        cmd->angleturn -= VitaScaleJoystickAxis(joyxmove, angleturn[tspeed]);
+      else
+#endif
+      {
       if (joyxmove > 0)
         cmd->angleturn -= angleturn[tspeed];
       if (joyxmove < 0)
         cmd->angleturn += angleturn[tspeed];
+      }
     }
 
   if (gamekeydown[key_up])
     forward += forwardmove[speed];
   if (gamekeydown[key_down])
     forward -= forwardmove[speed];
+#ifdef __vita__
+  if (vita_joystick_movement_mode)
+    forward -= VitaScaleJoystickAxis(joyymove, forwardmove[1]);
+  else
+#endif
+  {
   if (joyymove < 0)
     forward += forwardmove[speed];
   if (joyymove > 0)
     forward -= forwardmove[speed];
+  }
   if (gamekeydown[key_straferight] || joybuttons[joybstraferight])
     side += sidemove[speed];
   if (gamekeydown[key_strafeleft] || joybuttons[joybstrafeleft])
@@ -742,6 +815,15 @@ void G_BuildTiccmd(ticcmd_t* cmd)
   }
   else
     cmd->angleturn -= mousex; /* mead now have enough dynamic range 2-10-00 */
+
+#ifdef __vita__
+  /* Gyro yaw is an independent camera correction. It is deliberately not
+   * routed through mousex, so it remains camera-only even when strafe mode is
+   * active and does not use PC mouse acceleration/sensitivity. */
+  if (gamestate == GS_LEVEL && !menuactive && !demoplayback && vita_gyro_aim)
+    cmd->angleturn -= vita_gyro_turn;
+  vita_gyro_turn = 0;
+#endif
 
   if (!walkcamera.type || menuactive) //e6y
     mousex = mousey = 0;
@@ -1077,6 +1159,15 @@ dboolean G_Responder (event_t* ev)
         mousey += (AccelerateMouse(ev->data3)*(mouseSensitivity_vert))/40;
 
       return true;    // eat events
+
+#ifdef __vita__
+    case ev_gyro:
+      if (gamestate != GS_LEVEL || menuactive || demoplayback)
+        return true;
+
+      vita_gyro_turn += ev->data2;
+      return true;    // eat events
+#endif
 
     case ev_joystick:
       joybuttons[0] = ev->data1 & 1;
@@ -2085,7 +2176,10 @@ unsigned int GetPackageVersion(void)
       PACKAGEVERSION += b[i] * k;
     }
   }
-  return PACKAGEVERSION;
+  // mobj_t is serialized as a raw thinker record by p_saveg.c. Keep the
+  // visible package version unchanged while rejecting saves made with the
+  // previous field layout instead of interpreting them with wrong offsets.
+  return PACKAGEVERSION ^ ((unsigned int)MOBJ_SAVE_LAYOUT_VERSION << 24);
 }
 
 // [FG] support named complevels on the command line, e.g. "-complevel boom",
@@ -4424,10 +4518,17 @@ void P_WalkTicker()
         side += sidemove[speed];
       if (gamekeydown[key_left] || mousebuttons[mousebturnleft])
         side -= sidemove[speed];
+#ifdef __vita__
+      if (vita_joystick_movement_mode)
+        side += VitaScaleJoystickAxis(joyxmove, sidemove[1]);
+      else
+#endif
+      {
       if (joyxmove > 0)
         side += sidemove[speed];
       if (joyxmove < 0)
         side -= sidemove[speed];
+      }
     }
   else
     {
@@ -4435,20 +4536,34 @@ void P_WalkTicker()
         angturn -= angleturn[tspeed];
       if (gamekeydown[key_left] || mousebuttons[mousebturnleft])
         angturn += angleturn[tspeed];
+#ifdef __vita__
+      if (vita_joystick_movement_mode)
+        angturn -= VitaScaleJoystickAxis(joyxmove, angleturn[tspeed]);
+      else
+#endif
+      {
       if (joyxmove > 0)
         angturn -= angleturn[tspeed];
       if (joyxmove < 0)
         angturn += angleturn[tspeed];
+      }
     }
 
   if (gamekeydown[key_up])
     forward += forwardmove[speed];
   if (gamekeydown[key_down])
     forward -= forwardmove[speed];
+#ifdef __vita__
+  if (vita_joystick_movement_mode)
+    forward -= VitaScaleJoystickAxis(joyymove, forwardmove[1]);
+  else
+#endif
+  {
   if (joyymove < 0)
     forward += forwardmove[speed];
   if (joyymove > 0)
     forward -= forwardmove[speed];
+  }
   if (gamekeydown[key_straferight])
     side += sidemove[speed];
   if (gamekeydown[key_strafeleft])

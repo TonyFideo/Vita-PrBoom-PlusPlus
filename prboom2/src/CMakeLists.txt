@@ -202,6 +202,8 @@ set(SDLDOOM_SOURCES
     SDL/i_sshot.c
     SDL/i_system.c
     SDL/i_video.c
+    SDL/i_vita_motion.c
+    SDL/i_vita_motion.h
 )
 
 set(PCSOUND_SOURCES
@@ -248,6 +250,13 @@ set(DOOMMUSIC_SOURCES
     MUSIC/vorbisplayer.h
 )
 
+if(HAVE_LIBMPG123)
+    list(APPEND DOOMMUSIC_SOURCES
+        MUSIC/mpg123player.c
+        MUSIC/mpg123player.h
+    )
+endif()
+
 set(EXTRA_FILES
     r_drawcolpipeline.inl
     r_drawcolumn.inl
@@ -266,6 +275,15 @@ set(PRBOOM_PLUS_SOURCES
     ${DOOMMUSIC_SOURCES}
     ${EXTRA_FILES}
 )
+
+if(VITA)
+    list(APPEND PRBOOM_PLUS_SOURCES
+        ${CMAKE_SOURCE_DIR}/vita/vita_buttons.c
+        ${CMAKE_SOURCE_DIR}/vita/vita_buttons.h
+        ${CMAKE_SOURCE_DIR}/vita/vita_ime.c
+        ${CMAKE_SOURCE_DIR}/vita/vita_ime.h
+    )
+endif()
 
 if(VITA)
     set(GLBOOM_BINARY glboom-plus.elf)
@@ -331,17 +349,31 @@ function(AddGameExecutable TARGET SOURCES)
         target_include_directories(${TARGET} PRIVATE ${LIBMAD_INCLUDE_DIRS})
         target_link_libraries(${TARGET} PRIVATE ${LIBMAD_LIBRARIES})
     endif()
+    if(MPG123_FOUND)
+        target_include_directories(${TARGET} PRIVATE ${MPG123_INCLUDE_DIRS})
+        if(NOT VITA)
+            target_link_libraries(${TARGET} PRIVATE ${MPG123_LIBRARIES})
+        endif()
+    endif()
     if(FLUIDSYNTH_FOUND)
-        target_include_directories(${TARGET} PRIVATE ${FLUIDSYNTH_INCLUDE_DIR})
-        target_link_libraries(${TARGET} PRIVATE ${FLUIDSYNTH_LIBRARIES})
+        target_include_directories(${TARGET} PRIVATE ${FLUIDSYNTH_INCLUDE_DIRS})
+        if(NOT VITA)
+            target_link_libraries(${TARGET} PRIVATE ${FLUIDSYNTH_LIBRARIES})
+        endif()
     endif()
     if(DUMB_FOUND)
         target_include_directories(${TARGET} PRIVATE ${DUMB_INCLUDE_DIR})
-        target_link_libraries(${TARGET} PRIVATE ${DUMB_LIBRARY})
+        if(TARGET prboom_dumb)
+            target_link_libraries(${TARGET} PRIVATE prboom_dumb)
+        else()
+            target_link_libraries(${TARGET} PRIVATE ${DUMB_LIBRARY})
+        endif()
     endif()
     if(VORBIS_FOUND)
-        target_include_directories(${TARGET} PRIVATE ${VORBIS_INCLUDE_DIR})
-        target_link_libraries(${TARGET} PRIVATE ${VORBISFILE_LIBRARY})
+        target_include_directories(${TARGET} PRIVATE ${VORBIS_INCLUDE_DIRS})
+        if(NOT VITA)
+            target_link_libraries(${TARGET} PRIVATE ${VORBIS_LIBRARIES})
+        endif()
     endif()
     if(PortMidi_FOUND)
         target_include_directories(${TARGET} PRIVATE ${PORTMIDI_INCLUDE_DIR})
@@ -369,6 +401,24 @@ function(AddGameExecutable TARGET SOURCES)
         )
         # HACK: this adds libraries in a severely fucked up order and our pkg-config seems to do jack shit,
         #       so we just re-add them by hand
+        # Keep optional music libraries consistent with their feature flags.
+        # In particular, WITH_MPG123=OFF must not leave -lmpg123 in the Vita
+        # link line after the MPG123 player source has been omitted.
+        set(VITA_SDL2_MIXER_LIBRARY)
+        set(VITA_SDL2_MIXER_DEPENDENCIES)
+        if(HAVE_LIBSDL2_MIXER)
+            set(VITA_SDL2_MIXER_LIBRARY SDL2_mixer)
+            # VitaSDK ships SDL2_mixer as a static archive.  Its pkg-config
+            # metadata declares these decoder archives as private
+            # dependencies, so add them explicitly to the Vita link line.
+            # This does not enable PrBoom's optional MPG123 backend; it only
+            # satisfies SDL2_mixer's own static-link dependencies.
+            set(VITA_SDL2_MIXER_DEPENDENCIES opusfile opus modplug xmp-lite)
+        endif()
+        set(VITA_MPG123_LIBRARY)
+        if(HAVE_LIBMPG123)
+            set(VITA_MPG123_LIBRARY mpg123)
+        endif()
         target_link_libraries(
             ${TARGET} PRIVATE
             # Keep the Vita link set aligned with the original Vita port. Its
@@ -376,8 +426,8 @@ function(AddGameExecutable TARGET SOURCES)
             # libwebp directly. Linking these optional decoders pulls the
             # WebP lossless decoder into the executable even though the Vita
             # data uses PNG assets.
-            tess SDL2_net SDL2_image SDL2 vita2d vitaGL vitaShaRK ${VITA_SCE_SHACCCG_EXT_LIBRARY} ${VITA_TAIHEN_STUB_LIBRARY} stdc++ mathneon png16 jpeg mikmod mpg123 vorbisfile vorbis ogg FLAC fluidsynth
-            z pthread m c SceLibKernel_stub SceAppMgr_stub SceSysmodule_stub SceCtrl_stub SceTouch_stub SceNet_stub SceNetCtl_stub
+            tess SDL2_net SDL2_image ${VITA_SDL2_MIXER_LIBRARY} ${VITA_SDL2_MIXER_DEPENDENCIES} SDL2 vita2d vitaGL vitaShaRK ${VITA_SCE_SHACCCG_EXT_LIBRARY} ${VITA_TAIHEN_STUB_LIBRARY} stdc++ mathneon png16 jpeg mikmod ${VITA_MPG123_LIBRARY} vorbisfile vorbis ogg FLAC fluidsynth
+            z pthread m c SceLibKernel_stub SceAppMgr_stub SceSysmodule_stub SceIme_stub SceCtrl_stub SceTouch_stub SceNet_stub SceNetCtl_stub
             SceAppUtil_stub ScePower_stub SceCommonDialog_stub SceAudio_stub SceAudioIn_stub SceMotion_stub SceGxm_stub SceDisplay_stub SceHid_stub
             SceShaccCg_stub SceKernelDmacMgr_stub SceKernelModulemgr_stub
         )
@@ -425,6 +475,8 @@ if(OPENGL_FOUND AND OPENGL_GLU_FOUND)
         gl_shadow.c
         gl_sky.c
         gl_struct.h
+        gl_saturation.c
+        gl_saturation.h
         gl_texture.c
         gl_vertex.c
         gl_wipe.c

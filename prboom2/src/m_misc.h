@@ -55,6 +55,25 @@ void M_SaveDefaults (void);
 
 struct default_s *M_LookupDefault(const char *name);     /* killough 11/98 */
 
+/* Optional faster line-of-sight path for local, non-demo play. */
+extern int checksight12;
+
+#ifdef __vita__
+/* Vita-only settings exposed by the Vita Features setup screen. */
+extern int vita_gyro_aim;
+extern int vita_horizontal_sensitivity;
+extern int vita_joystick_movement_mode;
+extern int vita_left_stick_deadzone;
+extern int vita_left_stick_deadzone_amount;
+extern int vita_right_stick_deadzone;
+extern int vita_right_stick_deadzone_amount;
+extern int vita_minimum_sector_light;
+extern int vita_average_sector_light;
+extern int vita_color_saturation;
+extern int vita_show_fps;
+extern int vita_touch_inside_menu;
+#endif
+
 // phares 4/21/98:
 // Moved from m_misc.c so m_menu.c could see it.
 

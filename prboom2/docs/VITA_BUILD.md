@@ -19,9 +19,12 @@ cmake --build build-vita --target vita-prboom++.vpk-vpk
 `VITA_HOST_CC` and `VITA_ZIP_TOOL` are host paths. Change them to the paths
 used by the local MSYS2 installation if they differ.
 
-The build invokes the Makefile in `vita/vitaGL/` and links the resulting
-`libvitaGL.a` into GLBoom. It does not use `vitaGL-master` or a system VitaGL
-installation.
+The build invokes the Makefile in `vita/vitaGL-modern/`, builds the bundled
+`vitaShaRK`, and links the resulting `libvitaGL.a` into GLBoom. The legacy
+`texture_matrix` VitaGL fork is not part of this release build. If
+`SceShaccCgExt` and `taihen_stub` are not installed in VitaSDK, pass their
+locally built static-library paths with `VITA_SCE_SHACCCG_EXT_LIBRARY` and
+`VITA_TAIHEN_STUB_LIBRARY`.
 
 Outputs:
 

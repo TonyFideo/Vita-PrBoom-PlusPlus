@@ -354,6 +354,9 @@ typedef enum {
   ss_chat,
   ss_gen,       /* killough 10/98 */
   ss_comp,      /* killough 10/98 */
+#ifdef __vita__
+  ss_vita,      /* Vita-only feature settings */
+#endif
   ss_max
 } ss_types;
 

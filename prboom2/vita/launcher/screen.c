@@ -90,6 +90,14 @@ void R_PrintScaled(int flags, int x, int y, float s, unsigned c, const char *fmt
     vita2d_pgf_draw_text(fnt_main, x, y, c, s, buf);
 }
 
+int R_TextWidth(float s, const char *text)
+{
+    if (!fnt_main || !text)
+        return 0;
+
+    return vita2d_pgf_text_width(fnt_main, s, text);
+}
+
 void R_DrawButton(int x, int y, unsigned c, int button)
 {
     if (button == B_SELECT)

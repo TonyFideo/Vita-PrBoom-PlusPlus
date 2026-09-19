@@ -67,6 +67,10 @@ extern int vanilla_keymap;
 
 extern SDL_Window *sdl_window;
 extern SDL_Renderer *sdl_renderer;
+#ifdef __vita__
+/* Vita software presentation rectangle in the native 960x544 framebuffer. */
+extern SDL_Rect dst_rect;
+#endif
 
 extern const char *screen_resolutions_list[];
 extern const char *screen_resolution;

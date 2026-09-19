@@ -52,8 +52,8 @@
 // SCREEN WIPE PACKAGE
 //
 
-// Parts re-written to support true-color video modes. Column-major
-// formatting removed. - POPE
+// Parts re-written to support true-color video modes. On Vita the software
+// buffers use the transposed column-major layout described by 39986e3. - POPE
 
 // CPhipps - macros for the source and destination screens
 #define SRC_SCR 2
@@ -81,10 +81,17 @@ static int wipe_initMelt(int ticks)
   if (V_GetMode() != VID_MODEGL)
   {
     // copy start screen to main screen
+#if V_TRANSPOSED_SOFTWARE
+    for (i=0; i<SCREENWIDTH; i++)
+      memcpy(wipe_scr.data+i*wipe_scr.byte_pitch,
+             wipe_scr_start.data+i*wipe_scr_start.byte_pitch,
+             SCREENHEIGHT*V_GetPixelDepth());
+#else
     for(i=0;i<SCREENHEIGHT;i++)
     memcpy(wipe_scr.data+i*wipe_scr.byte_pitch,
            wipe_scr_start.data+i*wipe_scr_start.byte_pitch,
            SCREENWIDTH*V_GetPixelDepth());
+#endif
   }
 
   // setup initial column positions (y<0 => not ready to scroll yet)
@@ -128,6 +135,13 @@ static int wipe_doMelt(int ticks)
         if (y_lookup[i]+dy >= SCREENHEIGHT)
           dy = SCREENHEIGHT - y_lookup[i];
 
+#if V_TRANSPOSED_SOFTWARE
+       if (V_GetMode() != VID_MODEGL) {
+         s = wipe_scr_end.data + i*wipe_scr_end.byte_pitch + y_lookup[i]*depth;
+         d = wipe_scr.data     + i*wipe_scr.byte_pitch     + y_lookup[i]*depth;
+         memcpy(d, s, dy*depth);
+       }
+#else
        if (V_GetMode() != VID_MODEGL) {
         s = wipe_scr_end.data    + (y_lookup[i]*wipe_scr_end.byte_pitch+(i*depth));
         d = wipe_scr.data        + (y_lookup[i]*wipe_scr.byte_pitch+(i*depth));
@@ -138,8 +152,14 @@ static int wipe_doMelt(int ticks)
           s += wipe_scr_end.byte_pitch;
         }
        }
+#endif
         y_lookup[i] += dy;
        if (V_GetMode() != VID_MODEGL) {
+#if V_TRANSPOSED_SOFTWARE
+         s = wipe_scr_start.data + i*wipe_scr_start.byte_pitch;
+         d = wipe_scr.data       + i*wipe_scr.byte_pitch + y_lookup[i]*depth;
+         memcpy(d, s, (SCREENHEIGHT-y_lookup[i])*depth);
+#else
         s = wipe_scr_start.data  + (i*depth);
         d = wipe_scr.data        + (y_lookup[i]*wipe_scr.byte_pitch+(i*depth));
         for (j=SCREENHEIGHT-y_lookup[i];j;j--) {
@@ -148,6 +168,7 @@ static int wipe_doMelt(int ticks)
           d += wipe_scr.byte_pitch;
           s += wipe_scr_end.byte_pitch;
         }
+#endif
        }
         done = false;
       }
@@ -206,8 +227,10 @@ int wipe_StartScreen(void)
   wipe_scr_start.int_pitch = screens[0].int_pitch;
   
   //e6y: fixed slowdown at 1024x768 on some systems
+#if !V_TRANSPOSED_SOFTWARE
   if (!(wipe_scr_start.byte_pitch % 1024))
     wipe_scr_start.byte_pitch += 32;
+#endif
 
   wipe_scr_start.not_on_heap = false;
   V_AllocScreen(&wipe_scr_start);
@@ -236,8 +259,10 @@ int wipe_EndScreen(void)
   wipe_scr_end.int_pitch = screens[0].int_pitch;
 
   //e6y: fixed slowdown at 1024x768 on some systems
+#if !V_TRANSPOSED_SOFTWARE
   if (!(wipe_scr_end.byte_pitch % 1024))
     wipe_scr_end.byte_pitch += 32;
+#endif
 
   wipe_scr_end.not_on_heap = false;
   V_AllocScreen(&wipe_scr_end);

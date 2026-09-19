@@ -9,8 +9,7 @@
 enum Menus
 {
     MENU_MAIN,
-    MENU_VIDEO,
-    MENU_AUDIO,
+    MENU_VIDEO_AUDIO,
     MENU_INPUT,
     MENU_PWADS,
     MENU_MISC,
@@ -21,8 +20,11 @@ enum Menus
 
 enum OptionTypes
 {
+    OPT_SECTION,
+    OPT_SEPARATOR,
     OPT_BOOLEAN,
     OPT_CHOICE,
+    OPT_INT_CHOICE,
     OPT_INTEGER,
     OPT_DOUBLE,
     OPT_STRING,

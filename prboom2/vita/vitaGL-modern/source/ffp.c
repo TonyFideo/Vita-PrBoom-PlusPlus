@@ -272,12 +272,13 @@ typedef union {
 		uint64_t point_sprite : 1; // Frag
 		uint64_t fast_perspective_correction : 1; // Frag/Vert
 		uint64_t srgb_mode : 1; // Frag
-		uint64_t UNUSED : 29;
+		uint64_t saturation_mode : 1; // Frag
+		uint64_t UNUSED : 28;
 	};
 	uint64_t raw;
 } shader_mask;
 #define VERTEX_SHADER_MASK   (0b0000000000000000000000000000001011111100011000000111111100111000)
-#define FRAGMENT_SHADER_MASK (0b0000000000000000000000000000011100000011101111111111100011111111)
+#define FRAGMENT_SHADER_MASK (0b0000000000000000000000000000011100000011101111111111100011111111 | (1ULL << 35))
 #else
 typedef union {
 	struct {
@@ -296,11 +297,12 @@ typedef union {
 		uint32_t point_sprite : 1; // Frag
 		uint32_t fast_perspective_correction : 1; // Frag/Vert
 		uint32_t srgb_mode : 1; // Frag
+		uint32_t saturation_mode : 1; // Frag
 	};
 	uint32_t raw;
 } shader_mask;
 #define VERTEX_SHADER_MASK   (0b0101111111000000111111100111000)
-#define FRAGMENT_SHADER_MASK (0b1110000001111111111100011111111)
+#define FRAGMENT_SHADER_MASK (0b1110000001111111111100011111111 | (1u << 31))
 #endif
 #ifndef DISABLE_TEXTURE_COMBINER
 typedef union {
@@ -353,6 +355,7 @@ uint32_t ffp_vertex_unif_buf_size;
 uint8_t *ffp_vertex_unif_buf;
 uint32_t ffp_fragment_unif_buf_size;
 uint8_t *ffp_fragment_unif_buf;
+static float vgl_color_saturation = 1.0f;
 int *ffp_vertex_attribs;
 int *ffp_vertex_params;
 int *ffp_fragment_params;
@@ -406,6 +409,22 @@ void adjust_color_material_state() {
 		lighting_attr_ptr[FFP_DIFFUSE_COEFF] = &current_vtx.diff.x;
 		lighting_attr_ptr[FFP_SPECULAR_COEFF] = &current_vtx.spec.x;
 		lighting_attr_ptr[FFP_EMISSION_COEFF] = &current_vtx.emiss.x;
+	}
+}
+
+void vglSetColorSaturation(float saturation) {
+	GLboolean old_saturation_mode = vgl_color_saturation != 1.0f;
+
+	if (saturation < 0.0f)
+		saturation = 0.0f;
+	else if (saturation > 2.0f)
+		saturation = 2.0f;
+
+	if (vgl_color_saturation != saturation) {
+		vgl_color_saturation = saturation;
+		dirty_frag_unifs |= (1u << SATURATION_UNIF);
+		if (old_saturation_mode != (saturation != 1.0f))
+			ffp_dirty_frag = GL_TRUE;
 	}
 }
 
@@ -553,6 +572,7 @@ uint8_t reload_ffp_shaders(SceGxmVertexAttribute *attrs, SceGxmVertexStream *str
 	mask.pos_fixed_mask = ffp_vertex_attrib_fixed_pos_mask;
 	mask.fast_perspective_correction = fast_perspective_correction_hint;
 	mask.srgb_mode = srgb_mode;
+	mask.saturation_mode = vgl_color_saturation != 1.0f ? GL_TRUE : GL_FALSE;
 	uint16_t draw_mask_state = ffp_vertex_attrib_state;
 
 	// Counting number of enabled texture units
@@ -1094,13 +1114,13 @@ uint8_t reload_ffp_shaders(SceGxmVertexAttribute *attrs, SceGxmVertexStream *str
 				(mask.tex_env_mode_pass0 != COMBINE) ? mask.tex_env_mode_pass0 : TEX0_ENV_PASS_COMBINE,
 				(mask.tex_env_mode_pass1 != COMBINE) ? mask.tex_env_mode_pass1 : TEX1_ENV_PASS_COMBINE,
 				(mask.tex_env_mode_pass2 != COMBINE) ? mask.tex_env_mode_pass2 : TEX2_ENV_PASS_COMBINE,
-				mask.lights_num, mask.shading_mode, mask.point_sprite, mask.fast_perspective_correction, mask.srgb_mode);
+				mask.lights_num, mask.shading_mode, mask.point_sprite, mask.fast_perspective_correction, mask.srgb_mode, mask.saturation_mode);
 #else
 			sprintf(fshader, ffp_frag_src, texenv_shad, alpha_op,
 				mask.num_textures, mask.has_colors, mask.fog_mode,
 				(mask.tex_env_mode_pass0 != COMBINE) ? mask.tex_env_mode_pass0 : TEX0_ENV_PASS_COMBINE,
 				(mask.tex_env_mode_pass1 != COMBINE) ? mask.tex_env_mode_pass1 : TEX1_ENV_PASS_COMBINE,
-				mask.lights_num, mask.shading_mode, mask.point_sprite, mask.fast_perspective_correction, mask.srgb_mode);
+				mask.lights_num, mask.shading_mode, mask.point_sprite, mask.fast_perspective_correction, mask.srgb_mode, mask.saturation_mode);
 #endif
 			uint32_t size = strlen(fshader);
 			SceGxmProgram *t = shark_compile_shader_extended(fshader, &size, SHARK_FRAGMENT_SHADER, compiler_opts, compiler_fastmath, compiler_fastprecision, compiler_fastint);
@@ -1267,6 +1287,9 @@ uint8_t reload_ffp_shaders(SceGxmVertexAttribute *attrs, SceGxmVertexStream *str
 			}
 			if (ffp_fragment_params[FOG_DENSITY_UNIF] >= 0) {
 				upload_ffp_fragment_unif(FOG_DENSITY_UNIF, 0, 1, 1, (const float *)&fog_density)
+			}
+			if (ffp_fragment_params[SATURATION_UNIF] >= 0) {
+				upload_ffp_fragment_unif(SATURATION_UNIF, 0, 1, 1, &vgl_color_saturation)
 			}
 			if (ffp_fragment_params[LIGHTS_AMBIENTS_F_UNIF] >= 0) {
 				upload_ffp_fragment_unif(LIGHT_GLOBAL_AMBIENT_F_UNIF, 0, 1, 4, (const float *)&light_global_ambient.r)

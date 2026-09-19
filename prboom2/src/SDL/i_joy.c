@@ -16,6 +16,9 @@
 #include "i_joy.h"
 #include "i_system.h"
 #include "lprintf.h"
+#ifdef __vita__
+#include "m_misc.h"
+#endif
 
 #define TRIGGER_DEADZONE 16384
 
@@ -33,8 +36,10 @@ int usejoystick;
 
 static SDL_GameController *joystick;
 static int prev_axis[SDL_CONTROLLER_AXIS_MAX];
+#ifndef __vita__
 static int real_deadzone_left;
 static int real_deadzone_right;
+#endif
 
 static void I_EndJoystick(void)
 {
@@ -46,23 +51,102 @@ static void I_EndJoystick(void)
   }
 }
 
+#ifdef __vita__
+static int VitaClampDeadzoneAmount(int amount)
+{
+  if (amount < 0)
+    return 0;
+  if (amount > 100)
+    return 100;
+  return amount;
+}
+
+static int VitaAxisDeadzone(const int axis)
+{
+  int amount;
+  int enabled;
+
+  if (axis < 2)
+  {
+    enabled = vita_left_stick_deadzone;
+    amount = vita_left_stick_deadzone_amount;
+  }
+  else
+  {
+    enabled = vita_right_stick_deadzone;
+    amount = vita_right_stick_deadzone_amount;
+  }
+
+  if (!enabled)
+    return 0;
+
+  amount = VitaClampDeadzoneAmount(amount);
+  return (32767 * amount + 50) / 100;
+}
+
+/* Remove the configured center deadzone, then expand the remaining range back
+ * to the full signed SDL axis range. This prevents the deadzone setting from
+ * reducing the maximum movement or camera speed. */
+static int VitaRemapAxis(const int value, const int deadzone)
+{
+  int magnitude;
+  int available;
+
+  if (abs(value) <= deadzone)
+    return 0;
+
+  available = 32767 - deadzone;
+  if (available <= 0)
+    return 0;
+
+  magnitude = abs(value) - deadzone;
+  magnitude = (magnitude * 32767) / available;
+
+  return value < 0 ? -magnitude : magnitude;
+}
+#endif
+
 static int GetAxis(const int axis)
 {
   const int val = SDL_GameControllerGetAxis(joystick, axis);
+#ifdef __vita__
+  return VitaRemapAxis(val, VitaAxisDeadzone(axis));
+#else
   const int dz = (axis < 2) ? real_deadzone_left : real_deadzone_right;
   return (abs(val) > dz) ? val : 0;
+#endif
 }
 
 static int JoystickMove(const int axis)
 {
+#ifndef __vita__
   int axis_value;
+#endif
 
   if (axis < 0 || axis >= SDL_CONTROLLER_AXIS_MAX)
     return 0;
 
   prev_axis[axis] = GetAxis(axis);
+#ifdef __vita__
+  if (!prev_axis[axis])
+    return 0;
+
+  if (vita_joystick_movement_mode)
+  {
+    int magnitude = (abs(prev_axis[axis]) * 100 + 16383) / 32767;
+
+    if (magnitude > 100)
+      magnitude = 100;
+    return prev_axis[axis] < 0 ? -magnitude : magnitude;
+  }
+
+  /* Digital mode still honors the configured deadzone, but emits a clean
+   * -1/0/+1 value so the same event can drive both gameplay and menus. */
+  return prev_axis[axis] < 0 ? -1 : 1;
+#else
   axis_value = prev_axis[axis] / 3000;
   return abs(axis_value) < 7 ? 0 : axis_value;
+#endif
 }
 
 static int JoystickLook(const int axis)
@@ -82,8 +166,10 @@ void I_PollJoystick(void)
   if (!usejoystick || !joystick)
     return;
 
+#ifndef __vita__
   real_deadzone_left = 32768.0f * (float)joy_deadzone_left / 16.0f;
   real_deadzone_right = 32768.0f * (float)joy_deadzone_right / 16.0f;
+#endif
 
   ev.type = ev_joystick;
   ev.data1 = 0;

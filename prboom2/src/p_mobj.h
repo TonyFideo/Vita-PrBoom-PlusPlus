@@ -256,32 +256,51 @@ enum {
 
 // killough 9/8/98: changed some fields to shorts,
 // for better memory usage (if only for cache).
-/* cph 2006/08/28 - move Prev[XYZ] fields to the end of the struct. Add any
- * other new fields to the end, and make sure you don't break savegames! */
+/* The field order is arranged for the hot movement, collision and render
+ * paths. This layout is part of the savegame ABI; changing it requires a
+ * save-layout version bump or an explicit serializer. */
+
+/* Raw thinker serialization currently stores mobj_t as a binary record. */
+#define MOBJ_SAVE_LAYOUT_VERSION 2
 
 typedef struct mobj_s
 {
     // List: thinker links.
     thinker_t           thinker;
 
+    // Interaction info, by BLOCKMAP.
+    // Links in blocks (if needed).
+    struct mobj_s*      bnext;
+    struct mobj_s**     bprev; // killough 8/11/98: change to ptr-to-ptr
+
+    // Frequently accessed interaction and movement data.
+    uint_64_t           flags;
+
+    // For movement checking.
+    fixed_t             radius;
+    fixed_t             height;
+    int                 health;
+
     // Info for drawing: position.
     fixed_t             x;
     fixed_t             y;
     fixed_t             z;
 
+    // Previous position used by interpolation.
+    fixed_t             PrevX;
+    fixed_t             PrevY;
+    fixed_t             PrevZ;
+
     // More list: links in sector (if needed)
     struct mobj_s*      snext;
     struct mobj_s**     sprev; // killough 8/10/98: change to ptr-to-ptr
 
-    //More drawing info: to determine current sprite.
+    // More drawing info: to determine current sprite.
     angle_t             angle;  // orientation
+    state_t*            state;
     spritenum_t         sprite; // used to find patch_t and flip value
     int                 frame;  // might be ORed with FF_FULLBRIGHT
-
-    // Interaction info, by BLOCKMAP.
-    // Links in blocks (if needed).
-    struct mobj_s*      bnext;
-    struct mobj_s**     bprev; // killough 8/11/98: change to ptr-to-ptr
+    int                 tics;   // state tic counter
 
     struct subsector_s* subsector;
 
@@ -292,26 +311,15 @@ typedef struct mobj_s
     // killough 11/98: the lowest floor over all contacted Sectors.
     fixed_t             dropoffz;
 
-    // For movement checking.
-    fixed_t             radius;
-    fixed_t             height;
-
     // Momentums, used to update position.
     fixed_t             momx;
     fixed_t             momy;
     fixed_t             momz;
 
-    // If == validcount, already checked.
-    int                 validcount;
-
     mobjtype_t          type;
     mobjinfo_t*         info;   // &mobjinfo[mobj->type]
 
-    int                 tics;   // state tic counter
-    state_t*            state;
-    uint_64_t           flags;
     int                 intflags;  // killough 9/15/98: internal flags
-    int                 health;
 
     // Movement direction, movement generation (zig-zagging).
     short               movedir;        // 0-7
@@ -360,10 +368,6 @@ typedef struct mobj_s
 
     // a linked list of sectors where this object appears
     struct msecnode_s* touching_sectorlist;                 // phares 3/14/98
-
-    fixed_t             PrevX;
-    fixed_t             PrevY;
-    fixed_t             PrevZ;
 
     //e6y
     angle_t             pitch;  // orientation
@@ -425,4 +429,3 @@ void    P_SpawnPlayer(int n, const mapthing_t *mthing);
 void    P_CheckMissileSpawn(mobj_t*);  // killough 8/2/98
 void    P_ExplodeMissile(mobj_t*);    // killough
 #endif
-
