@@ -1,10 +1,14 @@
-## Vita-PrBoom++ research repo
-# (PrBoom+ 2.6.66 for the PSVITA with extra enhancements)
+## Vita-PrBoom++ research repo (PrBoom+ 2.6.66 for the PSVITA with extra enhancements)
 -Gyro support.
+
 -Keyboard pop up when selecting options.
+
 -Touch support for menus.
+
 -Performance tweaks from DSDA/Woof commits (CPU and Software performance).
+
 -Enhanced launcher.
+
 -Updated VitaGL to the latest version.
 
 
