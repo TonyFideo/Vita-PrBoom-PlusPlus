@@ -329,6 +329,9 @@ void A_WeaponReady(player_t *player, pspdef_t *psp)
 {
   CHECK_WEAPON_CODEPOINTER("A_WeaponReady", player);
 
+// weapon change sequence considered complete
+  done_autoswitch = false;
+
   // get out of attack state
   if (player->mo->state == &states[S_PLAY_ATK1]
       || player->mo->state == &states[S_PLAY_ATK2] )
@@ -371,8 +374,6 @@ void A_WeaponReady(player_t *player, pspdef_t *psp)
     angle &= FINEANGLES/2-1;
     psp->sy = WEAPONTOP + FixedMul(player->bob, finesine[angle]);
   }
-
-  done_autoswitch = false;
 }
 
 //
@@ -849,7 +850,7 @@ void A_FireCGun(player_t *player, pspdef_t *psp)
 {
   CHECK_WEAPON_CODEPOINTER("A_FireCGun", player);
 
-  if (player->ammo[weaponinfo[player->readyweapon].ammo] || comp[comp_sound])
+  if (player->ammo[weaponinfo[player->readyweapon].ammo] || default_comp[comp_sound])
     S_StartSound(player->mo, sfx_pistol);
 
   if (!player->ammo[weaponinfo[player->readyweapon].ammo])

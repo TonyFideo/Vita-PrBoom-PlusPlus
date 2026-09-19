@@ -59,6 +59,9 @@ int demover;
 int comp[COMP_TOTAL], default_comp[COMP_TOTAL];    // killough 10/98
 int /*comperr[COMPERR_NUM], */default_comperr[COMPERR_NUM];
 
+// [FG] allow MBF sky transfers in all complevels
+int comp_skytransfers;
+
 // v1.1-like pitched sounds
 int pitched_sounds;        // killough
 
@@ -105,7 +108,16 @@ int help_friends, default_help_friends;
 
 int flashing_hom;     // killough 10/98
 
-int doom_weapon_toggles; // killough 10/98
-
 int monkeys, default_monkeys;
 
+char *MAPNAME(int e, int m)
+{
+  static char name[9];
+
+  if (gamemode == commercial)
+    snprintf(name, sizeof(name), "MAP%02d", m);
+  else
+    snprintf(name, sizeof(name), "E%dM%d", e, m);
+
+  return name;
+}

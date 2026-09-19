@@ -47,6 +47,7 @@
 
 // Ty 03/17/98: flag that new par times have been loaded in d_deh
 extern dboolean deh_pars;
+extern dboolean um_pars;
 
 //
 // Data needed to add patches to full screen intermission pics.
@@ -418,16 +419,16 @@ static void WI_slamBackground(void)
 
   if (state != StatCount && enterpic) strcpy(name, enterpic);
   else if (exitpic) strcpy(name, exitpic);
-  else if (gamemode == commercial || (gamemode == retail && wbs->epsd == 3))
+  else if (gamemode == commercial || wbs->epsd < 0 || (gamemode == retail && wbs->epsd >= 3))
     strcpy(name, "INTERPIC");
   else
     sprintf(name, "WIMAP%d", wbs->epsd);
 
-  // background
-  V_DrawNamePatch(0, 0, FB, name, CR_DEFAULT, VPT_STRETCH);
-
   // e6y: wide-res
   V_FillBorder(-1, 0);
+
+  // background
+  V_DrawNamePatch(0, 0, FB, name, CR_DEFAULT, VPT_STRETCH);
 }
 
 
@@ -502,6 +503,12 @@ void WI_drawLF(void)
 	  // The level defines a new name but no texture for the name.
 	  WI_DrawString(160, y, wbs->lastmapinfo->levelname);
 	  y += (5 * hu_font['A' - HU_FONTSTART].height / 4);
+
+	  if (wbs->lastmapinfo->author)
+	  {
+		  WI_DrawString(160, y, wbs->lastmapinfo->author);
+		  y += (5 * hu_font['A' - HU_FONTSTART].height / 4);
+	  }
   }
   else
   {
@@ -509,6 +516,10 @@ void WI_drawLF(void)
 	  /* cph - get the graphic lump name and use it */
 	  if (wbs->lastmapinfo != NULL && wbs->lastmapinfo->levelpic[0]) strcpy(lname, wbs->lastmapinfo->levelpic);
 	  else WI_levelNameLump(wbs->epsd, wbs->last, lname);
+
+	  if (W_CheckNumForName(lname) == -1)
+	    return;
+
 	  // CPhipps - patch drawing updated
 	  V_DrawNamePatch((320 - V_NamePatchWidth(lname)) / 2, y,
 		  FB, lname, CR_DEFAULT, VPT_STRETCH);
@@ -547,6 +558,15 @@ void WI_drawEL(void)
 
 		// The level defines a new name but no texture for the name.
 		WI_DrawString(160, y, wbs->nextmapinfo->levelname);
+
+		if (wbs->nextmapinfo->author)
+		{
+			y += (5 * hu_font['A' - HU_FONTSTART].height / 4);
+
+			WI_DrawString(160, y, wbs->nextmapinfo->author);
+		}
+
+		y += (5 * hu_font['A' - HU_FONTSTART].height / 4);
 	}
 	else
 	{
@@ -554,12 +574,17 @@ void WI_drawEL(void)
 		if (wbs->nextmapinfo != NULL && wbs->nextmapinfo->levelpic[0]) strcpy(lname, wbs->nextmapinfo->levelpic);
 		else WI_levelNameLump(wbs->nextep, wbs->next, lname);
 
+		if (W_CheckNumForName(lname) == -1)
+		  return;
+
 		// draw level
 		y += (5 * V_NamePatchHeight(lname)) / 4;
 
 		// CPhipps - patch drawing updated
 		V_DrawNamePatch((320 - V_NamePatchWidth(lname)) / 2, y, FB,
 			lname, CR_DEFAULT, VPT_STRETCH);
+
+		y += (5 * V_NamePatchHeight(lname)) / 4;
 	}
 }
 
@@ -638,7 +663,7 @@ void WI_initAnimatedBack(int entering)
   if (gamemode == commercial)  // no animation for DOOM2
     return;
 
-  if (wbs->epsd > 2)
+  if (wbs->epsd < 0 || wbs->epsd > 2)
     return;
 
 
@@ -679,7 +704,7 @@ void WI_updateAnimatedBack(void)
   if (gamemode == commercial)
     return;
 
-  if (wbs->epsd > 2)
+  if (wbs->epsd < 0 || wbs->epsd > 2)
     return;
 
   for (i=0;i<NUMANIMS[wbs->epsd];i++)
@@ -739,7 +764,7 @@ void WI_drawAnimatedBack(void)
   if (gamemode==commercial) //jff 4/25/98 Someone forgot commercial an enum
     return;
 
-  if (wbs->epsd > 2)
+  if (wbs->epsd < 0 || wbs->epsd > 2)
     return;
 
   for (i=0 ; i<NUMANIMS[wbs->epsd] ; i++)
@@ -922,9 +947,10 @@ static void WI_drawTimeStats(int cnt_time, int cnt_total_time, int cnt_par)
   // killough 2/22/98: skip drawing par times on pwads
   // Ty 03/17/98: unless pars changed with deh patch
 
-  if (!(modifiedgame && !deh_pars) || (gamemission == pack_nerve && singleplayer))
+  if (!(modifiedgame && !deh_pars && !um_pars)
+          || (gamemission == pack_nerve && singleplayer))
   {
-    if (wbs->epsd < 4)
+    if (wbs->epsd < 4 || um_pars)
     {
       V_DrawNamePatch(320/2 + SP_TIMEX, SP_TIMEY, FB, par, CR_DEFAULT, VPT_STRETCH);
       WI_drawTime(320 - SP_TIMEX, SP_TIMEY, cnt_par);
@@ -1031,6 +1057,13 @@ void WI_drawShowNextLoc(void)
   int   i;
   int   last;
 
+  if (gamemapinfo != NULL &&
+      gamemapinfo->endpic[0] &&
+      strcmp(gamemapinfo->endpic, "-") != 0)
+  {
+    return;
+  }
+
   WI_slamBackground();
 
   // draw animated background
@@ -1045,7 +1078,7 @@ void WI_drawShowNextLoc(void)
 
   if ( gamemode != commercial)
   {
-    if (wbs->epsd > 2)
+    if (wbs->epsd < 0 || wbs->epsd > 2)
     {
       WI_drawEL();  // "Entering..." if not E1 or E2
       return;

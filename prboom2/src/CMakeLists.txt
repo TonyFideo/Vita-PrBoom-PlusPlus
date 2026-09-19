@@ -52,6 +52,8 @@ set(COMMON_SRC
     info.h
     i_capture.c
     i_capture.h
+    i_glob.c
+    i_glob.h
     i_joy.h
     i_main.h
     i_network.h
@@ -75,6 +77,8 @@ set(COMMON_SRC
     m_menu.h
     m_misc.c
     m_misc.h
+    m_io.c
+    m_io.h
     m_random.c
     m_random.h
     m_swap.h
@@ -176,7 +180,7 @@ set(NET_CLIENT_SRC
     d_client.c
 )
 
-if(HAVE_MMAP)
+if(HAVE_MMAP OR HAVE_CREATE_FILE_MAPPING)
     set(WAD_SRC w_mmap.c)
 else()
     set(WAD_SRC w_memcache.c)
@@ -191,6 +195,7 @@ set(MUS2MID_SRC
 
 set(SDLDOOM_SOURCES
     SDL/i_joy.c
+    SDL/i_image.c
     SDL/i_main.c
     SDL/i_network.c
     SDL/i_sound.c
@@ -237,6 +242,8 @@ set(DOOMMUSIC_SOURCES
     MUSIC/opl_queue.h
     MUSIC/portmidiplayer.c
     MUSIC/portmidiplayer.h
+    MUSIC/alsaplayer.c
+    MUSIC/alsaplayer.h
     MUSIC/vorbisplayer.c
     MUSIC/vorbisplayer.h
 )
@@ -340,19 +347,31 @@ function(AddGameExecutable TARGET SOURCES)
         target_include_directories(${TARGET} PRIVATE ${PORTMIDI_INCLUDE_DIR})
         target_link_libraries(${TARGET} PRIVATE ${PORTMIDI_LIBRARIES})
     endif()
+    if(ALSA_FOUND)
+        target_include_directories(${TARGET} PRIVATE ${ALSA_INCLUDE_DIR})
+        target_link_libraries(${TARGET} PRIVATE ${ASOUND_LIBRARY})
+    endif()
     if(NOT CMAKE_CROSSCOMPILING)
         add_dependencies(${TARGET} prboomwad)
     endif()
 
     if(VITA)
-        target_include_directories(${TARGET} PRIVATE ${CMAKE_SOURCE_DIR}/vita)
+        target_include_directories(${TARGET} PRIVATE
+            ${CMAKE_SOURCE_DIR}/vita
+            ${CMAKE_SOURCE_DIR}/vita/vitaGL/source
+        )
         # HACK: this adds libraries in a severely fucked up order and our pkg-config seems to do jack shit,
         #       so we just re-add them by hand
         target_link_libraries(
             ${TARGET} PRIVATE
-            tess SDL2_net SDL2_image SDL2_mixer SDL2 vita2d vitaGL mathneon png jpeg mikmod mpg123 vorbisfile vorbis ogg FLAC fluidsynth
+            # Keep the Vita link set aligned with the original Vita port. Its
+            # SDL2_image use is limited to the SDL_image API; it does not link
+            # libwebp directly. Linking these optional decoders pulls the
+            # WebP lossless decoder into the executable even though the Vita
+            # data uses PNG assets.
+            tess SDL2_net SDL2_image SDL2 vita2d vitaGL mathneon png16 jpeg mikmod mpg123 vorbisfile vorbis ogg FLAC fluidsynth
             z pthread m c SceLibKernel_stub SceAppMgr_stub SceSysmodule_stub SceCtrl_stub SceTouch_stub SceNet_stub SceNetCtl_stub
-            SceAppUtil_stub ScePower_stub SceCommonDialog_stub SceAudio_stub SceGxm_stub SceDisplay_stub SceHid_stub
+            SceAppUtil_stub ScePower_stub SceCommonDialog_stub SceAudio_stub SceAudioIn_stub SceMotion_stub SceGxm_stub SceDisplay_stub SceHid_stub
         )
     endif()
 
@@ -430,21 +449,26 @@ if(VITA)
     #       which is set to src/ for some reason
     if(BUILD_GL)
         vita_create_self(prboom-plus.self "../glboom-plus.elf")
-        add_dependencies(prboom-plus.self ${GLBOOM_BINARY})
+        # VitaSDK's current vita.cmake names the generated target
+        # `${target}-self` on CMake >= 3.20.
+        add_dependencies(prboom-plus.self-self ${GLBOOM_BINARY})
     else()
         vita_create_self(prboom-plus.self "../prboom-plus.elf")
-        add_dependencies(prboom-plus.self ${PRBOOM_BINARY})
+        add_dependencies(prboom-plus.self-self ${PRBOOM_BINARY})
     endif()
     vita_create_vpk(
         prboom-plus.vpk ${VITA_TITLEID} "${CMAKE_BINARY_DIR}/vita/launcher/vlauncher.self" NAME ${VITA_NAME}
         FILE "${CMAKE_BINARY_DIR}/src/prboom-plus.self" "prboom.bin"
         FILE "${CMAKE_SOURCE_DIR}/data/vita/launcher/fnt_buttons.png" "data/launcher/fnt_buttons.png"
+        FILE "${CMAKE_SOURCE_DIR}/data/vita/prboom-plus.cfg" "data/prboom/prboom-plus.cfg"
         FILE "${CMAKE_SOURCE_DIR}/data/vita/sce_sys/icon0.png" "sce_sys/icon0.png"
         FILE "${CMAKE_SOURCE_DIR}/data/vita/sce_sys/livearea/contents/bg.png" "sce_sys/livearea/contents/bg.png"
         FILE "${CMAKE_SOURCE_DIR}/data/vita/sce_sys/livearea/contents/startup.png" "sce_sys/livearea/contents/startup.png"
         FILE "${CMAKE_SOURCE_DIR}/data/vita/sce_sys/livearea/contents/template.xml" "sce_sys/livearea/contents/template.xml"
     )
-    add_dependencies(prboom-plus.vpk prboom-plus.self)
+    # VitaSDK's current vita.cmake names the generated target
+    # `${target}-vpk` on CMake >= 3.20.
+    add_dependencies(prboom-plus.vpk-vpk prboom-plus.self-self vita-data-zip)
 endif()
 
 # PrBoom-Plus server executable

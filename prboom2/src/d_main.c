@@ -97,6 +97,10 @@
 // NSM
 #include "i_capture.h"
 
+#include "i_glob.h"
+
+#include "m_io.h"
+
 void GetFirstMap(int *ep, int *map); // Ty 08/29/98 - add "-warp x" functionality
 static void D_PageDrawer(void);
 
@@ -154,6 +158,7 @@ const char *const standard_iwads[]=
 
   "hacx.wad",
   "chex.wad",
+  "rekkrsa.wad",
 
   "bfgdoom2.wad",
   "bfgdoom.wad",
@@ -224,7 +229,6 @@ static void D_Wipe(void)
   int wipestart = I_GetTime () - 1;
 
   if (!render_wipescreen) return;//e6y
-
   do
     {
       int nowtime, tics;
@@ -236,11 +240,17 @@ static void D_Wipe(void)
         }
       while (!tics);
       wipestart = nowtime;
+#ifdef __vita__
       I_StartRendering();
+#endif
       done = wipe_ScreenWipe(tics);
       I_UpdateNoBlit();
       M_Drawer();                   // menu is drawn even on top of wipes
       I_FinishUpdate();             // page flip or blit buffer
+      if (capturing_video && !doSkip && cap_wipescreen)
+      {
+        I_CaptureFrame();
+      }
     }
   while (!done);
 }
@@ -300,7 +310,9 @@ void D_Display (fixed_t frac)
     R_ResetViewInterpolation();
   }
 
+#ifdef __vita__
   I_StartRendering();
+#endif
 
   if (gamestate != GS_LEVEL) { // Not a level
     switch (oldgamestate) {
@@ -392,6 +404,17 @@ void D_Display (fixed_t frac)
     if (V_GetMode() != VID_MODEGL)
       R_DrawViewBorder();
     HU_Drawer();
+
+#ifdef GL_DOOM
+    if (V_GetMode() == VID_MODEGL)
+    {
+#ifdef __vita__
+      if (gl_fake_gamma)
+        gld_BlendFakeGamma();
+#endif
+      gld_ProcessExtraAlpha();
+    }
+#endif
   }
 
   isborderstate      = isborder;
@@ -556,9 +579,9 @@ static void D_PageDrawer(void)
   // proff - added M_DrawCredits
   if (pagename)
   {
-    V_DrawNamePatch(0, 0, 0, pagename, CR_DEFAULT, VPT_STRETCH);
     // e6y: wide-res
     V_FillBorder(-1, 0);
+    V_DrawNamePatch(0, 0, 0, pagename, CR_DEFAULT, VPT_STRETCH);
   }
   else
     M_DrawCredits();
@@ -692,6 +715,9 @@ void D_DoAdvanceDemo(void)
   } else
    if (!demostates[++demosequence][gamemode].func)
     demosequence = 0;
+  // do not even attempt to play DEMO4 if it is not available
+  if (demosequence == 6 && gamemode == commercial && W_CheckNumForName("demo4") < 0)
+    demosequence = 0;
   demostates[demosequence][gamemode].func
     (demostates[demosequence][gamemode].name);
 }
@@ -719,6 +745,16 @@ void D_AddFile (const char *file, wad_source_t source)
 {
   char *gwa_filename=NULL;
   int len;
+
+  // There can only be one iwad source!
+  if (source == source_iwad)
+  {
+    int i;
+
+    for (i = 0; i < numwadfiles; ++i)
+      if (wadfiles[i].src == source_iwad)
+        wadfiles[i].src = source_skip;
+  }
 
   wadfiles = realloc(wadfiles, sizeof(*wadfiles)*(numwadfiles+1));
   wadfiles[numwadfiles].name =
@@ -776,14 +812,13 @@ const char *D_dehout(void)
 //e6y static 
 void CheckIWAD(const char *iwadname,GameMode_t *gmode,dboolean *hassec)
 {
-  if ( !access (iwadname,R_OK) )
+  if ( !M_access (iwadname,R_OK) )
   {
-    int ud=0,rg=0,sw=0,cm=0,sc=0,hx=0,cq=0;
-    dboolean noiwad=0;
+    int ud=0,rg=0,sw=0,cm=0,sc=0,hx=0;
     FILE* fp;
 
     // Identify IWAD correctly
-    if ((fp = fopen(iwadname, "rb")))
+    if ((fp = M_fopen(iwadname, "rb")))
     {
       wadinfo_t header;
 
@@ -795,7 +830,7 @@ void CheckIWAD(const char *iwadname,GameMode_t *gmode,dboolean *hassec)
 
         if (strncmp(header.identification, "IWAD", 4)) // missing IWAD tag in header
         {
-          noiwad++;
+          lprintf(LO_WARN,"CheckIWAD: IWAD tag %s not present\n", iwadname);
         }
 
         // read IWAD directory
@@ -804,9 +839,11 @@ void CheckIWAD(const char *iwadname,GameMode_t *gmode,dboolean *hassec)
         length = header.numlumps;
         fileinfo = malloc(length*sizeof(filelump_t));
         if (fseek (fp, header.infotableofs, SEEK_SET) ||
-            fread (fileinfo, sizeof(filelump_t), length, fp) != length ||
-            fclose(fp))
+            fread (fileinfo, sizeof(filelump_t), length, fp) != length)
+        {
+          fclose(fp);
           I_Error("CheckIWAD: failed to read directory %s",iwadname);
+        }
 
         // scan directory for levelname lumps
         while (length--)
@@ -840,16 +877,12 @@ void CheckIWAD(const char *iwadname,GameMode_t *gmode,dboolean *hassec)
             bfgedition++;
           if (!strncmp(fileinfo[length].name,"HACX",4))
             hx++;
-          if (!strncmp(fileinfo[length].name,"W94_1",5) ||
-              !strncmp(fileinfo[length].name,"POSSH0M0",8))
-            cq++;
         }
         free(fileinfo);
 
-        if (noiwad && !bfgedition && cq < 2)
-          I_Error("CheckIWAD: IWAD tag %s not present", iwadname);
-
       }
+
+      fclose(fp);
     }
     else // error from open call
       I_Error("CheckIWAD: Can't open IWAD %s", iwadname);
@@ -1002,7 +1035,7 @@ static void IdentifyVersion (void)
   //V.Aguilar (5/30/99): In LiNUX, default to $HOME/.lxdoom
   {
     // CPhipps - use DOOMSAVEDIR if defined
-    const char *p = getenv("DOOMSAVEDIR");
+    const char *p = M_getenv("DOOMSAVEDIR");
 
     if (p == NULL)
       p = I_DoomExeDir();
@@ -1012,7 +1045,7 @@ static void IdentifyVersion (void)
   }
   if ((i=M_CheckParm("-save")) && i<myargc-1) //jff 3/24/98 if -save present
   {
-    if (!stat(myargv[i+1],&sbuf) && S_ISDIR(sbuf.st_mode)) // and is a dir
+    if (!M_stat(myargv[i+1],&sbuf) && S_ISDIR(sbuf.st_mode)) // and is a dir
     {
       free(basesavegame);
       basesavegame = strdup(myargv[i+1]);//jff 3/24/98 use that for savegame
@@ -1030,7 +1063,7 @@ static void IdentifyVersion (void)
   // proff 11/99: used for debugging
   {
     FILE *f;
-    f=fopen("levelinfo.txt","w");
+    f=M_fopen("levelinfo.txt","w");
     if (f)
     {
       fprintf(f,"%s\n",iwad);
@@ -1374,6 +1407,213 @@ static void L_SetupConsoleMasks(void) {
   }
 }
 
+// Calculate the path to the directory for autoloaded WADs/DEHs.
+// Creates the directory as necessary.
+
+static char *GetAutoloadBaseDir(unsigned int iter)
+{
+    static char *autoload_path = NULL;
+    int len;
+
+    if (M_CheckParm("-noload"))
+      return NULL;
+
+    if (autoload_path == NULL)
+    {
+        const char* exedir = I_DoomExeDir();
+        len = doom_snprintf(NULL, 0, "%s/autoload", exedir);
+        autoload_path = malloc(len+1);
+        doom_snprintf(autoload_path, len+1, "%s/autoload", exedir);
+    }
+
+    M_mkdir(autoload_path);
+
+    switch (iter)
+    {
+        case 0:
+            return autoload_path;
+            break;
+        default:
+            return NULL;
+            break;
+    }
+}
+
+static char *GetAutoloadDir(const char *base, const char *iwadname, dboolean createdir)
+{
+    char *result;
+    int len;
+
+    len = doom_snprintf(NULL, 0, "%s/%s", base, iwadname);
+    result = malloc(len+1);
+    doom_snprintf(result, len+1, "%s/%s", base, iwadname);
+
+    if (createdir)
+    {
+      M_mkdir(result);
+    }
+
+    return result;
+}
+
+const char *BaseName(const char *filename)
+{
+  char *basename;
+
+  basename = filename + strlen(filename) - 1;
+
+  while (basename > filename && *basename != '/' && *basename != '\\')
+    basename--;
+  if (*basename == '/' || *basename == '\\')
+    basename++;
+
+  return basename;
+}
+
+const char *IWADBaseName(void)
+{
+  int i;
+
+  for (i = 0; i < numwadfiles; i++)
+  {
+    if (wadfiles[i].src == source_iwad)
+      break;
+  }
+
+  if (i == numwadfiles)
+    I_Error("IWADBaseName: IWAD not found\n");
+
+  return BaseName(wadfiles[i].name);
+}
+
+// Load all WAD files from the given directory.
+
+static void AutoLoadWADs(const char *path)
+{
+    glob_t *glob;
+    const char *filename;
+
+    glob = I_StartMultiGlob(path, GLOB_FLAG_NOCASE|GLOB_FLAG_SORTED,
+                            "*.wad", "*.lmp", NULL);
+    for (;;)
+    {
+        filename = I_NextGlob(glob);
+        if (filename == NULL)
+        {
+            break;
+        }
+        D_AddFile(filename,source_auto_load);
+    }
+
+    I_EndGlob(glob);
+}
+
+// auto-loading of .wad files.
+
+void D_AutoloadIWadDir()
+{
+  int iter;
+  char *base;
+
+  for (iter = 0; (base = GetAutoloadBaseDir(iter)); iter++)
+  {
+    char *autoload_dir;
+
+    // common auto-loaded files for all Doom flavors
+    autoload_dir = GetAutoloadDir(base, "doom-all", true);
+    AutoLoadWADs(autoload_dir);
+    free(autoload_dir);
+
+    // auto-loaded files per IWAD
+    autoload_dir = GetAutoloadDir(base, IWADBaseName(), true);
+    AutoLoadWADs(autoload_dir);
+    free(autoload_dir);
+  }
+}
+
+static void D_AutoloadPWadDir()
+{
+  int iter;
+  char *base;
+
+  for (iter = 0; (base = GetAutoloadBaseDir(iter)); iter++)
+  {
+    int i;
+    for (i = 0; i < numwadfiles; ++i)
+      if (wadfiles[i].src == source_pwad)
+      {
+        char *autoload_dir;
+        autoload_dir = GetAutoloadDir(base, BaseName(wadfiles[i].name), false);
+        AutoLoadWADs(autoload_dir);
+        free(autoload_dir);
+      }
+  }
+}
+
+// Load all dehacked patches from the given directory.
+
+static void AutoLoadPatches(const char *path)
+{
+    const char *filename;
+    glob_t *glob;
+
+    glob = I_StartMultiGlob(path, GLOB_FLAG_NOCASE|GLOB_FLAG_SORTED,
+                            "*.deh", "*.bex", NULL);
+    for (;;)
+    {
+        filename = I_NextGlob(glob);
+        if (filename == NULL)
+        {
+            break;
+        }
+        ProcessDehFile(filename, D_dehout(), 0);
+    }
+
+    I_EndGlob(glob);
+}
+
+// auto-loading of .deh files.
+
+static void D_AutoloadDehDir()
+{
+  int iter;
+  char *base;
+
+  for (iter = 0; (base = GetAutoloadBaseDir(iter)); iter++)
+  {
+    char *autoload_dir;
+
+    // common auto-loaded files for all Doom flavors
+    autoload_dir = GetAutoloadDir(base, "doom-all", true);
+    AutoLoadPatches(autoload_dir);
+    free(autoload_dir);
+
+    // auto-loaded files per IWAD
+    autoload_dir = GetAutoloadDir(base, IWADBaseName(), true);
+    AutoLoadPatches(autoload_dir);
+    free(autoload_dir);
+  }
+}
+
+static void D_AutoloadDehPWadDir()
+{
+  int iter;
+  char *base;
+
+  for (iter = 0; (base = GetAutoloadBaseDir(iter)); iter++)
+  {
+    int i;
+    for (i = 0; i < numwadfiles; ++i)
+      if (wadfiles[i].src == source_pwad)
+      {
+        char *autoload_dir;
+        autoload_dir = GetAutoloadDir(base, BaseName(wadfiles[i].name), false);
+        AutoLoadPatches(autoload_dir);
+        free(autoload_dir);
+      }
+  }
+}
+
 //
 // D_DoomMainSetup
 //
@@ -1381,9 +1621,16 @@ static void L_SetupConsoleMasks(void) {
 //  line of execution so its stack space can be freed
 const char* doomverstr = NULL;
 
+int warpepisode = -1, warpmap = -1;
+
 static void D_DoomMainSetup(void)
 {
   int p,slot;
+
+#ifdef __vita__
+  I_VitaTraceReset();
+  I_VitaTrace("D_DoomMainSetup: enter");
+#endif
 
   L_SetupConsoleMasks();
 
@@ -1559,12 +1806,19 @@ static void D_DoomMainSetup(void)
        (p = M_CheckParm ("-wart")))
        // Ty 08/29/98 - moved this check later so we can have -warp alone: && p < myargc-1)
   {
-    startmap = 0; // Ty 08/29/98 - allow "-warp x" to go to first map in wad(s)
+    startmap = -1; // Ty 08/29/98 - allow "-warp x" to go to first map in wad(s)
     autostart = true; // Ty 08/29/98 - move outside the decision tree
     if (gamemode == commercial)
     {
       if (p < myargc-1)
-        startmap = atoi(myargv[p+1]);   // Ty 08/29/98 - add test if last parm
+      {
+        int map;
+        if (sscanf(myargv[p+1], "%d", &map) == 1)
+        {
+          startmap = map;
+        }
+        warpmap = startmap;
+      }
     }
     else    // 1/25/98 killough: fix -warp xxx from crashing Doom 1 / UD
     {
@@ -1579,11 +1833,13 @@ static void D_DoomMainSetup(void)
           {
             startmap = map;
           }
+          warpepisode = startepisode;
+          warpmap = startmap;
         }
       }
     }
   }
-  // Ty 08/29/98 - later we'll check for startmap=0 and autostart=true
+  // Ty 08/29/98 - later we'll check for startmap=-1 and autostart=true
   // as a special case that -warp * was used.  Actually -warp with any
   // non-numeric will do that but we'll only document "*"
 
@@ -1632,11 +1888,15 @@ static void D_DoomMainSetup(void)
   // Designed to be general, instead of specific to boomlump.wad
   // Some people might find this useful
   // cph - support MBF -noload parameter
-  if (!M_CheckParm("-noload")) {
+  {
     // only autoloaded wads here - autoloaded patches moved down below W_Init
-    int i;
+    int i, imax = MAXLOADFILES;
 
-    for (i=0; i<MAXLOADFILES; i++) {
+    // make sure to always autoload prboom-plus.wad
+    if (M_CheckParm("-noload"))
+      imax = 1;
+
+    for (i=0; i<imax; i++) {
       const char *fname = wad_files[i];
       char *fpath;
 
@@ -1651,6 +1911,10 @@ static void D_DoomMainSetup(void)
       }
     }
   }
+
+  // add wad files from autoload directory before wads from -file parameter
+
+  D_AutoloadIWadDir();
 
   // add any files specified on the command line with -file wadfile
   // to the wad list
@@ -1724,6 +1988,10 @@ static void D_DoomMainSetup(void)
 #endif
   }
 
+  // add wad files from autoload PWAD directories
+
+  D_AutoloadPWadDir();
+
 
   // 1/18/98 killough: Z_Init() call moved to i_main.c
 
@@ -1776,6 +2044,13 @@ static void D_DoomMainSetup(void)
     }
   }
 
+  // Automatic pistol start when advancing from one level to the next. At the
+  // beginning of each level, the player's health is reset to 100, their
+  // armor to 0 and their inventory is reduced to the following: pistol,
+  // fists and 50 bullets.
+
+  pistolstart = M_CheckParm("-pistolstart");
+
   if (!M_CheckParm("-noload")) {
     // now do autoloaded dehacked patches, after IWAD patches but before PWAD
     int i;
@@ -1797,12 +2072,20 @@ static void D_DoomMainSetup(void)
     }
   }
 
+  // process deh files from autoload directory before deh in wads from -file parameter
+
+  D_AutoloadDehDir();
+
   if (!M_CheckParm ("-nodeh"))
     for (p = -1; (p = W_ListNumFromName("DEHACKED", p)) >= 0; )
       if (!(lumpinfo[p].source == source_iwad
             || lumpinfo[p].source == source_pre
             || lumpinfo[p].source == source_auto_load))
         ProcessDehFile(NULL, D_dehout(), p);
+
+  // process .deh files from PWADs autoload directories
+
+  D_AutoloadDehPWadDir();
 
   // Load command line dehacked patches after WAD dehacked patches
 
@@ -1870,6 +2153,10 @@ static void D_DoomMainSetup(void)
   lprintf(LO_INFO,"M_Init: Init miscellaneous info.\n");
   M_Init();
 
+#ifdef __vita__
+  I_VitaTrace("D_DoomMainSetup: M_Init ready");
+#endif
+
 #ifdef HAVE_NET
   // CPhipps - now wait for netgame start
   D_CheckNetGame();
@@ -1879,24 +2166,52 @@ static void D_DoomMainSetup(void)
   lprintf(LO_INFO,"R_Init: Init DOOM refresh daemon - ");
   R_Init();
 
+#ifdef __vita__
+  I_VitaTrace("D_DoomMainSetup: R_Init ready");
+#endif
+
   //jff 9/3/98 use logical output routine
   lprintf(LO_INFO,"\nP_Init: Init Playloop state.\n");
   P_Init();
+
+#ifdef __vita__
+  I_VitaTrace("D_DoomMainSetup: P_Init ready");
+#endif
 
   //jff 9/3/98 use logical output routine
   lprintf(LO_INFO,"I_Init: Setting up machine state.\n");
   I_Init();
 
+#ifdef __vita__
+  I_VitaTrace("D_DoomMainSetup: I_Init ready");
+#endif
+
   //jff 9/3/98 use logical output routine
   lprintf(LO_INFO,"S_Init: Setting up sound.\n");
   S_Init(snd_SfxVolume /* *8 */, snd_MusicVolume /* *8*/ );
+
+#ifdef __vita__
+  I_VitaTrace("D_DoomMainSetup: S_Init ready");
+#endif
 
   //jff 9/3/98 use logical output routine
   lprintf(LO_INFO,"HU_Init: Setting up heads up display.\n");
   HU_Init();
 
+#ifdef __vita__
+  I_VitaTrace("D_DoomMainSetup: HU_Init ready");
+#endif
+
   if (!(M_CheckParm("-nodraw") && M_CheckParm("-nosound")))
+  {
+#ifdef __vita__
+    I_VitaTrace("D_DoomMainSetup: I_InitGraphics enter");
+#endif
     I_InitGraphics();
+#ifdef __vita__
+    I_VitaTrace("D_DoomMainSetup: I_InitGraphics ready");
+#endif
+  }
 
   // NSM
   if ((p = M_CheckParm("-viddump")) && (p < myargc-1))
@@ -1908,6 +2223,10 @@ static void D_DoomMainSetup(void)
   lprintf(LO_INFO,"ST_Init: Init status bar.\n");
   ST_Init();
 
+#ifdef __vita__
+  I_VitaTrace("D_DoomMainSetup: ST_Init ready");
+#endif
+
   // CPhipps - auto screenshots
   if ((p = M_CheckParm("-autoshot")) && (p < myargc-2))
     if ((auto_shot_count = auto_shot_time = atoi(myargv[p+1])))
@@ -1915,7 +2234,7 @@ static void D_DoomMainSetup(void)
 
   if ((p = M_CheckParm("-statdump")) && (p < myargc-1))
   {
-      atexit(StatDump);
+      I_AtExit(StatDump, true);
       lprintf(LO_INFO,"External statistics registered.\n");
   }
 
@@ -2023,7 +2342,7 @@ void GetFirstMap(int *ep, int *map)
   int ix;  // index for lookup
 
   strcpy(name,""); // initialize
-  if (*map == 0) // unknown so go search for first changed one
+  if (*map == -1) // unknown so go search for first changed one
   {
     *ep = 1;
     *map = 1; // default E1M1 or MAP01

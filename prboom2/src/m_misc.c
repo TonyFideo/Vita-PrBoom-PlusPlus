@@ -76,9 +76,7 @@
 #include "r_sky.h"
 
 //e6y
-#ifdef GL_DOOM
 #include "gl_struct.h"
-#endif
 #include "g_overflow.h"
 #include "e6y.h"
 #ifdef USE_WINDOWS_LAUNCHER
@@ -87,6 +85,8 @@
 
 // NSM
 #include "i_capture.h"
+
+#include "m_io.h"
 
 /* cph - disk icon not implemented */
 static inline void I_BeginRead(void) {}
@@ -104,7 +104,7 @@ dboolean M_WriteFile(char const *name, const void *source, size_t length)
 
   errno = 0;
 
-  if (!(fp = fopen(name, "wb")))       // Try opening file
+  if (!(fp = M_fopen(name, "wb")))       // Try opening file
     return 0;                          // Could not open file for writing
 
   I_BeginRead();                       // Disk icon on
@@ -113,7 +113,7 @@ dboolean M_WriteFile(char const *name, const void *source, size_t length)
   I_EndRead();                         // Disk icon off
 
   if (!length)                         // Remove partially written file
-    remove(name);
+    M_remove(name);
 
   return length;
 }
@@ -128,7 +128,7 @@ int M_ReadFile(char const *name, byte **buffer)
 {
   FILE *fp;
 
-  if ((fp = fopen(name, "rb")))
+  if ((fp = M_fopen(name, "rb")))
     {
       size_t length;
 
@@ -208,6 +208,70 @@ extern int gl_fog_color;
 extern int gl_finish;
 extern int gl_clear;
 extern int gl_ztrick;
+#else
+// dummy variables for !GL_DOOM
+static int gl_nearclip;
+extern int gl_colorbuffer_bits;
+extern int gl_depthbuffer_bits;
+static int gl_texture_filter;
+static int gl_sprite_filter;
+static int gl_patch_filter;
+static int gl_texture_filter_anisotropic;
+static const char *gl_tex_format_string;
+static int gl_sky_detail;
+static int gl_use_paletted_texture;
+static int gl_use_shared_texture_palette;
+static int gl_compatibility;
+static int gl_ext_texture_filter_anisotropic_default;
+static int gl_arb_texture_non_power_of_two_default;
+static int gl_arb_multitexture_default;
+static int gl_arb_texture_compression_default;
+static int gl_ext_framebuffer_object_default;
+static int gl_ext_packed_depth_stencil_default;
+static int gl_ext_blend_color_default;
+static int gl_use_stencil_default;
+static int gl_ext_arb_vertex_buffer_object_default;
+static int gl_arb_pixel_buffer_object_default;
+static int gl_arb_shader_objects_default;
+static int gl_motionblur;
+static int gl_fog;
+static int gl_fog_color;
+static int gl_finish;
+static int gl_clear;
+static int gl_ztrick;
+
+// dummy variables for !GL_DOOM declared in gl_struct.h
+int gl_use_display_lists;
+int gl_sprite_offset_default;
+int gl_sprite_blend;
+int gl_mask_sprite_threshold;
+int gl_skymode;
+int gl_allow_detail_textures;
+int gl_detail_maxdist;
+spriteclipmode_t gl_spriteclip;
+int gl_spriteclip_threshold;
+int gl_sprites_frustum_culling;
+int gl_boom_colormaps_default;
+int gl_hires_24bit_colormap;
+int gl_texture_internal_hires;
+int gl_texture_external_hires;
+int gl_hires_override_pwads;
+const char *gl_texture_hires_dir;
+int gl_texture_hqresize;
+int gl_texture_hqresize_textures;
+int gl_texture_hqresize_sprites;
+int gl_texture_hqresize_patches;
+motion_blur_params_t motion_blur;
+gl_lightmode_t gl_lightmode_default;
+int gl_light_ambient;
+int useglgamma;
+int gl_color_mip_levels;
+simple_shadow_params_t simple_shadows;
+int gl_shadows_maxdist;
+int gl_shadows_factor;
+int gl_blend_animations;
+spritefuzzmode_t gl_thingspritefuzzmode;
+spritefuzzmode_t gl_weaponspritefuzzmode;
 
 #endif
 
@@ -243,6 +307,8 @@ default_t defaults[] =
   {"default_compatibility_level",{(int*)&default_compatibility_level},
    {-1},-1,MAX_COMPATIBILITY_LEVEL-1,
    def_int,ss_none}, // compatibility level" - CPhipps
+  {"vanilla_keymap",{&vanilla_keymap},{0},0,1,
+  def_bool,ss_none}, // Use vanilla keybaord mapping
   {"realtic_clock_rate",{&realtic_clock_rate},{100},0,UL,
    def_int,ss_none}, // percentage of normal speed (35 fps) realtic clock runs at
   {"menu_background", {(int*)&menu_background}, {1}, 0, 1,
@@ -275,9 +341,6 @@ default_t defaults[] =
    def_int,ss_none}, // selects default skill 1=TYTD 2=NTR 3=HMP 4=UV 5=NM
   {"weapon_recoil",{&default_weapon_recoil},{0},0,1,
    def_bool,ss_weap, &weapon_recoil},
-  /* killough 10/98 - toggle between SG/SSG and Fist/Chainsaw */
-  {"doom_weapon_toggles",{&doom_weapon_toggles}, {1}, 0, 1,
-   def_bool, ss_weap },
   {"player_bobbing",{&default_player_bobbing},{1},0,1,         // phares 2/25/98
    def_bool,ss_weap, &player_bobbing},
   {"weapon_attack_alignment",{&weapon_attack_alignment},{0},0,3,         // phares 2/25/98
@@ -308,6 +371,9 @@ default_t defaults[] =
   {"dog_jumping",{&default_dog_jumping}, {1}, 0, 1,
    def_bool, ss_enem, &dog_jumping},
    /* End of MBF AI extras */
+
+  // [FG] colored blood and gibs
+  {"colored_blood",{(int*)&colored_blood}, {0}, 0, 1, def_bool, ss_none},
 
   {"sts_always_red",{&sts_always_red},{1},0,1, // no color changes on status bar
    def_bool,ss_stat},
@@ -356,6 +422,8 @@ default_t defaults[] =
   {"comp_ouchface",{&default_comp[comp_ouchface]},{0},0,1,def_bool,ss_comp,&comp[comp_ouchface]},
   {"comp_maxhealth",{&default_comp[comp_maxhealth]},{0},0,1,def_bool,ss_comp,&comp[comp_maxhealth]},
   {"comp_translucency",{&default_comp[comp_translucency]},{0},0,1,def_bool,ss_comp,&comp[comp_translucency]},
+  // [FG] allow MBF sky transfers in all complevels
+  {"comp_skytransfers",{&comp_skytransfers},{0},0,1,def_bool,ss_comp},
 
   {"Sound settings",{NULL},{0},UL,UL,def_none,ss_none},
   {"snd_pcspeaker",{&snd_pcspeaker},{0}, 0, 1, def_bool,ss_none},
@@ -366,15 +434,14 @@ default_t defaults[] =
   {"pitched_sounds",{&pitched_sounds},{0},0,1, // killough 2/21/98
    def_bool,ss_none}, // enables variable pitch in sound effects (from id's original code)
   {"samplerate",{&snd_samplerate},{44100},11025,48000, def_int,ss_none},
+  {"slice_samplecount",{&snd_samplecount},{0},0,8192, def_int,ss_none},
   {"sfx_volume",{&snd_SfxVolume},{8},0,15, def_int,ss_none},
   {"music_volume",{&snd_MusicVolume},{8},0,15, def_int,ss_none},
   {"mus_pause_opt",{&mus_pause_opt},{1},0,2, // CPhipps - music pausing
    def_int, ss_none}, // 0 = kill music when paused, 1 = pause music, 2 = let music continue
-  {"snd_channels",{&default_numChannels},{32},1,32,
+  {"snd_channels",{&default_numChannels},{MAX_CHANNELS},1,MAX_CHANNELS,
    def_int,ss_none}, // number of audio events simultaneously // killough
-#if defined(_WIN32)
-  {"snd_midiplayer",{NULL, &snd_midiplayer},{0,"fluidsynth"},UL,UL,def_str,ss_none},
-  {"snd_soundfont",{NULL, &snd_soundfont},{0,"TimGM6mb.sf2"},UL,UL,def_str,ss_none}, // soundfont name for synths that support it
+#ifdef _WIN32
 #elif defined(__vita__)
   {"snd_midiplayer",{NULL, &snd_midiplayer},{0,"opl2"},UL,UL,def_str,ss_none},
   {"snd_soundfont",{NULL, &snd_soundfont},{0,"TimGM6mb.sf2"},UL,UL,def_str,ss_none}, // soundfont name for synths that support it
@@ -382,31 +449,37 @@ default_t defaults[] =
   {"snd_midiplayer",{NULL, &snd_midiplayer},{0,"sdl"},UL,UL,def_str,ss_none},
   {"snd_soundfont",{NULL, &snd_soundfont},{0,"/usr/share/sounds/sf3/default-GM.sf3"},UL,UL,def_str,ss_none}, // soundfont name for synths that support it
 #endif
-  {"snd_mididev",{NULL, &snd_mididev},{0,""},UL,UL,def_str,ss_none}, // midi device to use for portmidiplayer
+  {"snd_mididev",{NULL, &snd_mididev},{0,""},UL,UL,def_str,ss_none}, // midi device to use for portmidiplayer and alsaplayer
+  {"lowpass_filter",{&lowpass_filter},{0},0,1,
+  def_bool,ss_none}, // low-pass filter borrowed from Chocolate Doom so upscaling old audio doesn't sound too horrible
+  {"full_sounds",{&full_sounds},{0},0,1,def_bool,ss_none}, // disable sound cutoffs
 
-#ifdef _WIN32
-  {"mus_extend_volume",{&mus_extend_volume},{0},0,1,
-   def_bool,ss_none}, // e6y: apply midi volume to all midi devices
-#endif
   {"mus_fluidsynth_chorus",{&mus_fluidsynth_chorus},{0},0,1,def_bool,ss_none},
   {"mus_fluidsynth_reverb",{&mus_fluidsynth_reverb},{0},0,1,def_bool,ss_none},
   {"mus_fluidsynth_gain",{&mus_fluidsynth_gain},{50},0,1000,def_int,ss_none}, // NSM  fine tune fluidsynth output level
   {"mus_opl_gain",{&mus_opl_gain},{50},0,1000,def_int,ss_none}, // NSM  fine tune opl output level
+  {"mus_portmidi_reset_type",{NULL, &mus_portmidi_reset_type},{0,"gm"},UL,UL,def_str,ss_none}, // portmidi reset type (none, gs, gm, gm2, xg)
+  {"mus_portmidi_reset_delay",{&mus_portmidi_reset_delay},{0},0,2000,def_int,ss_none}, // portmidi delay after reset (milliseconds)
+  {"mus_portmidi_filter_sysex",{&mus_portmidi_filter_sysex},{1},0,1,def_bool,ss_none}, // portmidi block sysex from midi files
+  {"mus_portmidi_reverb_level",{&mus_portmidi_reverb_level},{-1},-1,127,def_int,ss_none}, // portmidi reverb send level
+  {"mus_portmidi_chorus_level",{&mus_portmidi_chorus_level},{-1},-1,127,def_int,ss_none}, // portmidi chorus send level
 
   {"Video settings",{NULL},{0},UL,UL,def_none,ss_none},
 #ifdef GL_DOOM
-  #if defined(_MSC_VER) || defined(__vita__)
-    {"videomode",{NULL, &default_videomode},{0,"OpenGL"},UL,UL,def_str,ss_none},
-  #else
-    {"videomode",{NULL, &default_videomode},{0,"8"},UL,UL,def_str,ss_none},
-  #endif
+#if defined(_MSC_VER) || defined(__vita__)
+  {"videomode",{NULL, &default_videomode},{0,"OpenGL"},UL,UL,def_str,ss_none},
 #else
-  {"videomode",{NULL, &default_videomode},{0,"8"},UL,UL,def_str,ss_none},
+  {"videomode",{NULL, &default_videomode},{0,"8bit"},UL,UL,def_str,ss_none},
+#endif
+#else
+  {"videomode",{NULL, &default_videomode},{0,"8bit"},UL,UL,def_str,ss_none},
 #endif
   /* 320x200 default resolution */
   {"screen_resolution",{NULL, &screen_resolution},{0,"320x200"},UL,UL,def_str,ss_none},
   {"use_fullscreen",{&use_fullscreen},{1},0,1, /* proff 21/05/2000 */
    def_bool,ss_none},
+  {"exclusive_fullscreen",{&exclusive_fullscreen},{0},0,1, // [FG] mode-changing fullscreen
+  def_bool,ss_none},
   {"render_vsync",{&render_vsync},{1},0,1,
    def_bool,ss_none},
   {"translucency",{&default_translucency},{1},0,1,   // phares
@@ -419,8 +492,6 @@ default_t defaults[] =
    def_int,ss_none}, // gamma correction level // killough 1/18/98
   {"uncapped_framerate", {&movement_smooth_default},  {1},0,1,
    def_bool,ss_stat},
-  {"test_interpolation_method", {&interpolation_method},  {0},0,1,
-   def_int,ss_stat},
   {"filter_wall",{(int*)&drawvars.filterwall},{RDRAW_FILTER_POINT},
    RDRAW_FILTER_POINT, RDRAW_FILTER_ROUNDED, def_int,ss_none},
   {"filter_floor",{(int*)&drawvars.filterfloor},{RDRAW_FILTER_POINT},
@@ -438,7 +509,6 @@ default_t defaults[] =
   {"patch_edges",{(int*)&drawvars.patch_edges},{RDRAW_MASKEDCOLUMNEDGE_SQUARE},
    RDRAW_MASKEDCOLUMNEDGE_SQUARE, RDRAW_MASKEDCOLUMNEDGE_SLOPED, def_int,ss_none},
 
-#ifdef GL_DOOM
   {"OpenGL settings",{NULL},{0},UL,UL,def_none,ss_none},
   {"gl_compatibility", {&gl_compatibility},  {0},0,1,
    def_bool,ss_stat},
@@ -468,7 +538,7 @@ default_t defaults[] =
   {"gl_use_display_lists",{&gl_use_display_lists},{0},0,1,
    def_bool,ss_none},
 
-  {"gl_finish",{&gl_finish},{0},0,1,
+  {"gl_finish",{&gl_finish},{1},0,1,
    def_bool,ss_none},
   {"gl_clear",{&gl_clear},{0},0,1,
    def_bool,ss_none},
@@ -481,7 +551,7 @@ default_t defaults[] =
   {"gl_depthbuffer_bits",{&gl_depthbuffer_bits},{24},16,32,
    def_int,ss_none},
   {"gl_texture_filter",{(int*)&gl_texture_filter},
-   {filter_nearest}, filter_nearest, filter_count - 1, def_int,ss_none},
+   {filter_nearest_mipmap_linear}, filter_nearest, filter_count - 1, def_int,ss_none},
   {"gl_sprite_filter",{(int*)&gl_sprite_filter},
    {filter_nearest}, filter_nearest, filter_linear_mipmap_nearest, def_int,ss_none},
   {"gl_patch_filter",{(int*)&gl_patch_filter},
@@ -498,13 +568,12 @@ default_t defaults[] =
    def_int,ss_none},
   {"gl_skymode",{(int*)&gl_skymode},
   {skytype_auto}, skytype_auto, skytype_count - 1, def_int,ss_none},
-  {"gl_sky_detail",{&gl_sky_detail},{8},1,32,
+  {"gl_sky_detail",{&gl_sky_detail},{16},1,32,
    def_int,ss_none},
   {"gl_use_paletted_texture",{&gl_use_paletted_texture},{0},0,1,
    def_bool,ss_none},
   {"gl_use_shared_texture_palette",{&gl_use_shared_texture_palette},{0},0,1,
    def_bool,ss_none},
-#endif
 
   {"Mouse settings",{NULL},{0},UL,UL,def_none,ss_none},
   {"use_mouse",{&usemouse},{1},0,1,
@@ -515,7 +584,43 @@ default_t defaults[] =
   //jff 4/3/98 allow unlimited sensitivity
   {"mouse_sensitivity_vert",{&mouseSensitivity_vert},{1},0,UL,
    def_int,ss_none}, /* adjust vertical (y) mouse sensitivity killough/mead */
-  {"mouse_no_vert",{&mouse_novert},{2},0,2,def_int,ss_none},
+  //jff 3/8/98 allow -1 in mouse bindings to disable mouse function
+  {"mouseb_fire",{&mousebfire},{0},-1,MAX_MOUSEB,
+   def_int,ss_keys}, // mouse button number to use for fire
+  {"mouseb_strafe",{&mousebstrafe},{1},-1,MAX_MOUSEB,
+   def_int,ss_keys}, // mouse button number to use for strafing
+  {"mouseb_forward",{&mousebforward},{2},-1,MAX_MOUSEB,
+   def_int,ss_keys}, // mouse button number to use for forward motion
+  {"mouseb_backward",{&mousebbackward},{-1},-1,MAX_MOUSEB,
+   def_int,ss_keys}, // mouse button number to use for backward motion
+  {"mouseb_turnright",{&mousebturnright},{-1},-1,MAX_MOUSEB,
+   def_int,ss_keys}, // mouse button number to use for turning right
+  {"mouseb_turnleft",{&mousebturnleft},{-1},-1,MAX_MOUSEB,
+   def_int,ss_keys}, // mouse button number to use for turning left
+  {"mouseb_use", {&mousebuse},{-1},-1,MAX_MOUSEB,
+   def_int,ss_keys}, // mouse button number to use for using doors/switches
+  {"mouseb_speed", {&mousebspeed},{-1},-1,MAX_MOUSEB,
+   def_int,ss_keys},
+  //jff 3/8/98 end of lower range change for -1 allowed in mouse binding
+
+  {"mb_weapon1",{&mb_weapon1},{-1},-1,MAX_MOUSEB,
+  def_int,ss_keys}, // mouse button to switch to weapon 1 (fist/chainsaw)
+  {"mb_weapon2",{&mb_weapon2},{-1},-1,MAX_MOUSEB,
+  def_int,ss_keys}, // mouse button to switch to weapon 2 (pistol)
+  {"mb_weapon3",{&mb_weapon3},{-1},-1,MAX_MOUSEB,
+  def_int,ss_keys}, // mouse button to switch to weapon 3 (supershotgun/shotgun)
+  {"mb_weapon4",{&mb_weapon4},{-1},-1,MAX_MOUSEB,
+  def_int,ss_keys}, // mouse button to switch to weapon 4 (chaingun)
+  {"mb_weapon5",{&mb_weapon5},{-1},-1,MAX_MOUSEB,
+  def_int,ss_keys}, // mouse button to switch to weapon 5 (rocket launcher)
+  {"mb_weapon6",{&mb_weapon6},{-1},-1,MAX_MOUSEB,
+  def_int,ss_keys}, // mouse button to switch to weapon 6 (plasma rifle)
+  {"mb_weapon7",{&mb_weapon7},{-1},-1,MAX_MOUSEB,
+  def_int,ss_keys}, // mouse button to switch to weapon 7 (bfg9000)
+  {"mb_weapon8",{&mb_weapon8},{-1},-1,MAX_MOUSEB,
+  def_int,ss_keys}, // mouse button to switch to weapon 8 (chainsaw)
+  {"mb_weapon9",{&mb_weapon9},{-1},-1,MAX_MOUSEB,
+  def_int,ss_keys}, // mouse button to switch to weapon 9 (supershotgun)
 
 // For key bindings, the values stored in the key_* variables       // phares
 // are the internal Doom Codes. The values stored in the default.cfg
@@ -533,6 +638,8 @@ default_t defaults[] =
    0,MAX_KEY,def_key,ss_keys}, // key to move backward
   {"key_mlook",       {&key_mlook},           {'\\'},
    0,MAX_KEY,def_key,ss_keys}, // key to move backward
+  {"key_novert",      {&key_novert},          {0}  ,
+   0,MAX_KEY,def_key,ss_keys}, // key to toggle novert mode
   {"key_menu_right",  {&key_menu_right},     {KEYD_RIGHTARROW},// phares 3/7/98
    0,MAX_KEY,def_key,ss_keys}, // key to move right in a menu  //     |
   {"key_menu_left",   {&key_menu_left},      {KEYD_LEFTARROW} ,//     V
@@ -629,10 +736,8 @@ default_t defaults[] =
    0,MAX_KEY,def_key,ss_keys}, // key to toggle rotating the automap to match the player's orientation
   {"key_map_overlay", {&key_map_overlay},     {'o'}           ,
    0,MAX_KEY,def_key,ss_keys}, // key to toggle overlaying the automap on the rendered display
-#ifdef GL_DOOM
   {"key_map_textured", {&key_map_textured},   {0}             ,
    0,MAX_KEY,def_key,ss_keys}, // key to toggle textured automap
-#endif
   {"key_reverse",     {&key_reverse},         {'/'}           ,
    0,MAX_KEY,def_key,ss_keys}, // key to spin 180 instantly
   {"key_zoomin",      {&key_zoomin},          {'='}           ,
@@ -779,14 +884,8 @@ default_t defaults[] =
    def_int,ss_auto},
   {"map_wheel_zoom", {&map_wheel_zoom}, {1},0,1,
    def_bool,ss_auto},
-#ifdef GL_DOOM
-  {"map_use_multisamling", {&map_use_multisamling}, {1},0,1,
-   def_bool,ss_auto},
-#else
   {"map_use_multisamling", {&map_use_multisamling}, {0},0,1,
    def_bool,ss_auto},
-#endif
-#ifdef GL_DOOM
   {"map_textured", {&map_textured}, {1},0,1,
    def_bool,ss_auto},
   {"map_textured_trans", {&map_textured_trans}, {100},0,100,
@@ -795,7 +894,6 @@ default_t defaults[] =
    def_int,ss_auto},
   {"map_lines_overlay_trans", {&map_lines_overlay_trans}, {100},0,100,
    def_int,ss_auto},
-#endif
   {"map_overlay_pos_x", {&map_overlay_pos_x}, {0},0,319,
    def_int,ss_auto},
   {"map_overlay_pos_y", {&map_overlay_pos_y}, {0},0,199,
@@ -895,6 +993,8 @@ default_t defaults[] =
    def_bool,ss_stat},
   {"hudadd_demoprogressbar", {&hudadd_demoprogressbar},  {1},0,1,
    def_bool,ss_stat},
+  {"hudadd_timests", {&hudadd_timests},  {0},0,1,
+   def_bool,ss_stat},
   {"hudadd_crosshair", {&hudadd_crosshair},  {0},0,HU_CROSSHAIRS-1,
    def_bool,ss_stat},
   {"hudadd_crosshair_scale", {&hudadd_crosshair_scale},  {0},0,1,
@@ -946,7 +1046,6 @@ default_t defaults[] =
    def_bool,ss_stat},
   {"screenshot_dir", {NULL,&screenshot_dir}, {0,""},UL,UL,
    def_str,ss_none},
-#ifdef GL_DOOM
   {"health_bar", {&health_bar}, {0},0,1,
    def_bool,ss_stat},
   {"health_bar_full_length", {&health_bar_full_length}, {1},0,1,
@@ -957,7 +1056,6 @@ default_t defaults[] =
    def_int,ss_stat},
   {"health_bar_green", {&health_bar_green}, {0},0,100,
    def_int,ss_stat},
-#endif
 
   // NSM
   {"Video capture encoding settings",{NULL},{0},UL,UL,def_none,ss_none},
@@ -968,6 +1066,7 @@ default_t defaults[] =
   {"cap_tempfile2",{NULL, &cap_tempfile2},{0,"temp_v.nut"},UL,UL,def_str,ss_none},
   {"cap_remove_tempfiles", {&cap_remove_tempfiles},{1},0,1,def_bool,ss_none},
   {"cap_fps", {&cap_fps},{60},16,300,def_int,ss_none},
+  {"cap_wipescreen", {&cap_wipescreen},{0},0,1,def_bool,ss_none},
 
   {"Prboom-plus video settings",{NULL},{0},UL,UL,def_none,ss_none},
   {"sdl_video_window_pos", {NULL,&sdl_video_window_pos}, {0,"center"},UL,UL,
@@ -980,14 +1079,10 @@ default_t defaults[] =
    def_bool,ss_stat},
   {"render_wipescreen", {&render_wipescreen},  {1},0,1,
    def_bool,ss_stat},
-  {"render_screen_multiply", {&render_screen_multiply},  {1},
-#ifdef __vita__
-  -2, // additional options for auto scaling
-#else
-   1,
-#endif
-   4,
+  {"render_screen_multiply", {&render_screen_multiply},  {1},1,5,
    def_int,ss_stat},
+  {"integer_scaling", {&integer_scaling},  {0},0,1,
+   def_bool,ss_stat},
   {"render_aspect", {&render_aspect},  {0},0,4,
    def_int,ss_stat},
   {"render_doom_lightmaps", {&render_doom_lightmaps},  {0},0,1,
@@ -1007,6 +1102,8 @@ default_t defaults[] =
 
   {"movement_mouselook", {&movement_mouselook},  {0},0,1,
    def_bool,ss_stat},
+  {"movement_mousenovert", {&movement_mousenovert},  {0},0,1,
+   def_bool,ss_stat},
   {"movement_maxviewpitch", {&movement_maxviewpitch},  {90},0,90,
    def_int,ss_stat},
    {"movement_mousestrafedivisor", {&movement_mousestrafedivisor},  {4},1,512,
@@ -1014,7 +1111,6 @@ default_t defaults[] =
   {"movement_mouseinvert", {&movement_mouseinvert},  {0},0,1,
    def_bool,ss_stat},
 
-#ifdef GL_DOOM
   {"Prboom-plus OpenGL settings",{NULL},{0},UL,UL,def_none,ss_none},
   {"gl_allow_detail_textures", {&gl_allow_detail_textures},  {1},0,1,
    def_bool,ss_stat},
@@ -1063,7 +1159,13 @@ default_t defaults[] =
    def_str,ss_none},
   {"gl_motionblur_att_c", {NULL,&motion_blur.str_att_c}, {0,"0.9"},UL,UL,
    def_str,ss_none},
+#ifdef __vita__
+  // Match the original Vita port when an older cfg does not contain these
+  // newer OpenGL options.
+  {"gl_lightmode",{(int*)&gl_lightmode_default},{gl_lightmode_gzdoom},
+#else
   {"gl_lightmode",{(int*)&gl_lightmode_default},{gl_lightmode_glboom},
+#endif
    gl_lightmode_glboom, gl_lightmode_last-1, def_int,ss_none},
   {"gl_light_ambient", {&gl_light_ambient},  {20},1,255,
    def_int,ss_stat},
@@ -1071,7 +1173,13 @@ default_t defaults[] =
    def_bool,ss_stat},
   {"gl_fog_color", {&gl_fog_color},  {0},0,0xffffff,
    def_hex,ss_stat},
-  {"useglgamma",{&useglgamma},{6},0,MAX_GLGAMMA,
+  {"useglgamma",{&useglgamma},
+#ifdef __vita__
+   {0},
+#else
+   {6},
+#endif
+   0,MAX_GLGAMMA,
    def_int,ss_none},
   {"gl_color_mip_levels", {&gl_color_mip_levels},  {0},0,1,
    def_bool,ss_stat},
@@ -1083,7 +1191,11 @@ default_t defaults[] =
    def_int,ss_none},
   {"gl_blend_animations",{&gl_blend_animations},{0},0,1,
    def_bool,ss_none},
-#endif
+  {"gl_thingspritefuzzmode",{(int*)&gl_thingspritefuzzmode},{fuzz_darken},fuzz_darken,fuzz_last-1,
+      def_int, ss_none},
+  {"gl_weaponspritefuzzmode",{(int*)&gl_weaponspritefuzzmode},{fuzz_darken},fuzz_darken,fuzz_last-1,
+      def_int, ss_none},
+
   {"Prboom-plus emulation settings",{NULL},{0},UL,UL,def_none,ss_none},
   {"overrun_spechit_warn", {&overflows[OVERFLOW_SPECHIT].warn},  {0},0,1,
    def_bool,ss_stat},
@@ -1330,10 +1442,23 @@ void M_SaveDefaults (void)
 {
   int   i;
   FILE* f;
+  int maxlen = 0;
 
-  f = fopen (defaultfile, "w");
+  f = M_fopen (defaultfile, "w");
   if (!f)
     return; // can't write the file, but don't complain
+
+  // get maximum config key string length
+  for (i = 0 ; i < numdefaults ; i++) {
+    int len;
+    if (defaults[i].type == def_none) {
+      continue;
+    }
+    len = strlen(defaults[i].name);
+    if (len > maxlen && len < 80) {
+      maxlen = len;
+    }
+  }
 
   // 3/3/98 explain format of file
 
@@ -1350,7 +1475,7 @@ void M_SaveDefaults (void)
       if (defaults[i].type == def_arr)
       {
         int k;
-        fprintf (f,"%-25s \"%s\"\n",defaults[i].name,*(defaults[i].location.ppsz));
+        fprintf (f,"%-*s \"%s\"\n",maxlen,defaults[i].name,*(defaults[i].location.ppsz));
         for (k = 0; k < *(defaults[i].location.array_size); k++)
         {
           char ***arr = defaults[i].location.array_data;
@@ -1358,7 +1483,7 @@ void M_SaveDefaults (void)
           {
             char def[80];
             sprintf(def, "%s%d", *(defaults[i].location.ppsz), k);
-            fprintf (f,"%-25s \"%s\"\n",def, (*arr)[k]);
+            fprintf (f,"%-*s \"%s\"\n",maxlen,def, (*arr)[k]);
           }
         }
         i += defaults[i].defaultvalue.array_size;
@@ -1371,13 +1496,13 @@ void M_SaveDefaults (void)
       // CPhipps - remove keycode hack
       // killough 3/6/98: use spaces instead of tabs for uniform justification
       if (defaults[i].type == def_hex)
-  fprintf (f,"%-25s 0x%x\n",defaults[i].name,*(defaults[i].location.pi));
+  fprintf (f,"%-*s 0x%x\n",maxlen,defaults[i].name,*(defaults[i].location.pi));
       else
-  fprintf (f,"%-25s %5i\n",defaults[i].name,*(defaults[i].location.pi));
+  fprintf (f,"%-*s %i\n",maxlen,defaults[i].name,*(defaults[i].location.pi));
       }
     else
       {
-      fprintf (f,"%-25s \"%s\"\n",defaults[i].name,*(defaults[i].location.ppsz));
+      fprintf (f,"%-*s \"%s\"\n",maxlen,defaults[i].name,*(defaults[i].location.ppsz));
       }
     }
 
@@ -1470,11 +1595,7 @@ void M_LoadDefaults (void)
 
   // check for a custom default file
 
-#if ((defined GL_DOOM) && (defined _MSC_VER))
-#define BOOM_CFG "glboom-plus.cfg"
-#else
 #define BOOM_CFG "prboom-plus.cfg"
-#endif
 
   i = M_CheckParm ("-config");
   if (i && i < myargc-1)
@@ -1494,7 +1615,7 @@ void M_LoadDefaults (void)
 
   // read the file in, overriding any set defaults
 
-  f = fopen (defaultfile, "r");
+  f = M_fopen (defaultfile, "r");
   if (f)
     {
     while (!feof(f))
@@ -1612,7 +1733,8 @@ void M_LoadDefaults (void)
      doesn't overlap with the cfg settings */
   //e6y: Check on existence of prboom.wad
   if (!(wad_files[0] = I_FindFile(PACKAGE_TARNAME ".wad", "")))
-    I_Error("PrBoom-Plus.wad not found. Can't continue.");
+    I_Error("PrBoom-Plus.wad not found in %s. Extract data.zip to the root of the Vita storage.",
+            I_DoomExeDir());
 }
 
 
@@ -1678,7 +1800,7 @@ const char* M_CheckWritableDir(const char *dir)
 
     if (base[len - 1] != '\\' && base[len - 1] != '/')
       strcat(base, "/");
-    if (!access(base, O_RDWR))
+    if (!M_access(base, O_RDWR))
     {
       base[strlen(base) - 1] = 0;
       result = base;
@@ -1705,7 +1827,7 @@ void M_ScreenShot(void)
 #ifdef _WIN32
     shot_dir = M_CheckWritableDir(I_DoomExeDir());
 #else
-    shot_dir = (!access(SCREENSHOT_DIR, 2) ? SCREENSHOT_DIR : NULL);
+    shot_dir = (!M_access(SCREENSHOT_DIR, 2) ? SCREENSHOT_DIR : NULL);
 #endif
 
   if (shot_dir)
@@ -1717,9 +1839,9 @@ void M_ScreenShot(void)
       lbmname = realloc(lbmname, size+1);
       doom_snprintf(lbmname, size+1, "%s/doom%02d" SCREENSHOT_EXT, shot_dir, shot);
       shot++;
-    } while (!access(lbmname,0) && (shot != startshot) && (shot < 10000));
+    } while (!M_access(lbmname,0) && (shot != startshot) && (shot < 10000));
 
-    if (access(lbmname,0))
+    if (M_access(lbmname,0))
     {
       S_StartSound(NULL,gamemode==commercial ? sfx_radio : sfx_tink);
       M_DoScreenShot(lbmname); // cph

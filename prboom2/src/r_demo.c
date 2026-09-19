@@ -65,6 +65,8 @@
 #include "g_overflow.h"
 #include "e6y.h"
 
+#include "m_io.h"
+
 int IsDemoPlayback(void)
 {
   int p;
@@ -335,7 +337,7 @@ void W_AddLump(wadtbl_t *wadtbl, const char *name, const byte* data, size_t size
   {
     wadtbl->lumps = realloc(wadtbl->lumps, (lumpnum + 1) * sizeof(wadtbl->lumps[0]));
 
-    strncpy(wadtbl->lumps[lumpnum].name, name, 8);
+    memcpy(wadtbl->lumps[lumpnum].name, name, 8);
     wadtbl->lumps[lumpnum].size = size;
     wadtbl->lumps[lumpnum].filepos = wadtbl->header.infotableofs;
 
@@ -448,6 +450,11 @@ angle_t R_DemoEx_ReadMLook(void)
   mlook_lump.tick++;
 
   return (pitch << 16);
+}
+
+void R_DemoEx_ResetMLook(void)
+{
+  mlook_lump.tick = 0;
 }
 
 void R_DemoEx_WriteMLook(angle_t pitch)
@@ -571,8 +578,14 @@ static void R_DemoEx_GetParams(const byte *pwad_p, waddata_t *waddata)
       p = M_CheckParmEx("-complevel", params, paramscount);
       if (p >= 0 && p < (int)paramscount - 1)
       {
+        int level;
+        static char str[4];
+        extern int G_GetNamedComplevel (const char *arg);
         M_AddParam("-complevel");
-        M_AddParam(params[p + 1]);
+        // [FG] only save numeric complevel values
+        level = G_GetNamedComplevel(params[p + 1]);
+        snprintf(str, sizeof(str), "%d", level);
+        M_AddParam(str);
       }
     }
 
@@ -583,6 +596,16 @@ static void R_DemoEx_GetParams(const byte *pwad_p, waddata_t *waddata)
       if (p >= 0)
       {
         M_AddParam("-solo-net");
+      }
+    }
+
+    //for recording or playback using "coop in single-player" mode
+    if (!M_CheckParm("-coop_spawns"))
+    {
+      p = M_CheckParmEx("-coop_spawns", params, paramscount);
+      if (p >= 0)
+      {
+        M_AddParam("-coop_spawns");
       }
     }
 
@@ -759,6 +782,13 @@ static void R_DemoEx_AddParams(wadtbl_t *wadtbl)
     AddString(&files, buf);
   }
 
+  //for recording or playback using "coop in single-player" mode
+  if (M_CheckParm("-coop_spawns"))
+  {
+    sprintf(buf, "-coop_spawns ");
+    AddString(&files, buf);
+  }
+
   if ((p = M_CheckParm("-emulate")) && (p < myargc - 1))
   {
     sprintf(buf, "-emulate %s", myargv[p + 1]);
@@ -853,7 +883,7 @@ byte* G_GetDemoFooter(const char *filename, const byte **footer, size_t *size)
   const byte* p;
   size_t file_size;
 
-  hfile = fopen(filename, "rb");
+  hfile = M_fopen(filename, "rb");
 
   if (!hfile)
     return result;
@@ -930,7 +960,7 @@ void G_SetDemoFooter(const char *filename, wadtbl_t *wadtbl)
     newfilename[sizeof(newfilename) - 5] = 0;
     strcat(newfilename, ".out");
 
-    hfile = fopen(newfilename, "wb");
+    hfile = M_fopen(newfilename, "wb");
     if (hfile)
     {
       int demosize = (demoex_p - buffer);
@@ -1002,7 +1032,7 @@ int CheckWadFileIntegrity(const char *filename)
   filelump_t *fileinfo, *fileinfo2free = NULL;
   int result = false;
   
-  hfile = fopen(filename, "rb");
+  hfile = M_fopen(filename, "rb");
   if (hfile)
   {
     if (fread(&header, sizeof(header), 1, hfile) == 1 &&
@@ -1075,7 +1105,14 @@ static int G_ReadDemoFooter(const char *filename)
       }
 
       doom_snprintf(demoex_filename, sizeof(demoex_filename), template_format, tmp_path);
+#ifdef HAVE_MKSTEMP
+      if (mkstemp(demoex_filename) == -1)
+      {
+        demoex_filename[0] = 0;
+      }
+#else
       mktemp(demoex_filename);
+#endif
 
       free(tmp_path);
     }
@@ -1203,6 +1240,8 @@ void G_WriteDemoFooter(FILE *file)
   {
     I_Error("G_WriteDemoFooter: error writing");
   }
+
+  W_FreePWADTable(&demoex);
 }
 
 int WadDataInit(waddata_t *waddata)

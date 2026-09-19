@@ -704,6 +704,7 @@ void R_InitTranslationTables (void)
   int i, j;
 #define MAXTRANS 3
   byte transtocolour[MAXTRANS];
+  byte player_colors[] = {0x70, 0x60, 0x40, 0x20};
 
   // killough 5/2/98:
   // Remove dependency of colormaps aligned on 256-byte boundary
@@ -714,7 +715,7 @@ void R_InitTranslationTables (void)
   for (i=0; i<MAXTRANS; i++) transtocolour[i] = 255;
 
   for (i=0; i<MAXPLAYERS; i++) {
-    byte wantcolour = mapcolor_plyr[i];
+    byte wantcolour = player_colors[i];
     playernumtotrans[i] = 0;
     if (wantcolour != 0x70) // Not green, would like translation
       for (j=0; j<MAXTRANS; j++)
@@ -728,9 +729,9 @@ void R_InitTranslationTables (void)
     if (i >= 0x70 && i<= 0x7f)
       {
   // CPhipps - configurable player colours
-        translationtables[i] = colormaps[0][((i&0xf)<<9) + transtocolour[0]];
-        translationtables[i+256] = colormaps[0][((i&0xf)<<9) + transtocolour[1]];
-        translationtables[i+512] = colormaps[0][((i&0xf)<<9) + transtocolour[2]];
+        translationtables[i] = colormaps[0][(i&0xf) + transtocolour[0]];
+        translationtables[i+256] = colormaps[0][(i&0xf) + transtocolour[1]];
+        translationtables[i+512] = colormaps[0][(i&0xf) + transtocolour[2]];
       }
     else  // Keep all other colors as is.
       translationtables[i]=translationtables[i+256]=translationtables[i+512]=i;
@@ -1002,6 +1003,8 @@ void R_InitBuffersRes(void)
   byte_tempbuf = calloc(1, (SCREENHEIGHT * 4) * sizeof(*byte_tempbuf));
   short_tempbuf = calloc(1, (SCREENHEIGHT * 4) * sizeof(*short_tempbuf));
   int_tempbuf = calloc(1, (SCREENHEIGHT * 4) * sizeof(*int_tempbuf));
+
+  temp_x = 0;
 }
 
 //
@@ -1076,18 +1079,18 @@ void R_FillBackScreen (void)
       only_stbar = screenblocks >= 10;
     }
 
-    if (only_stbar)
+    if (only_stbar && ST_SCALED_OFFSETX > 0)
     {
       int stbar_top = SCREENHEIGHT - ST_SCALED_HEIGHT;
 
       V_FillFlat(grnrock.lumpnum, 1,
-        0, stbar_top, wide_offsetx, ST_SCALED_HEIGHT, VPT_NONE);
+        0, stbar_top, ST_SCALED_OFFSETX, ST_SCALED_HEIGHT, VPT_NONE);
       V_FillFlat(grnrock.lumpnum, 1,
-        SCREENWIDTH - wide_offsetx, stbar_top, wide_offsetx, ST_SCALED_HEIGHT, VPT_NONE);
+        SCREENWIDTH - ST_SCALED_OFFSETX, stbar_top, ST_SCALED_OFFSETX, ST_SCALED_HEIGHT, VPT_NONE);
       
       // line between view and status bar
-      V_FillPatch(brdr_b.lumpnum, 1, 0, stbar_top, wide_offsetx, brdr_b.height, VPT_NONE);
-      V_FillPatch(brdr_b.lumpnum, 1, SCREENWIDTH - wide_offsetx, stbar_top, wide_offsetx, brdr_b.height, VPT_NONE);
+      V_FillPatch(brdr_b.lumpnum, 1, 0, stbar_top, ST_SCALED_OFFSETX, brdr_b.height, VPT_NONE);
+      V_FillPatch(brdr_b.lumpnum, 1, SCREENWIDTH - ST_SCALED_OFFSETX, stbar_top, ST_SCALED_OFFSETX, brdr_b.height, VPT_NONE);
 
       return;
     }
@@ -1153,18 +1156,19 @@ void R_DrawViewBorder(void)
 
   // e6y: wide-res
   if ((ratio_multiplier != ratio_scale || wide_offsety) &&
+      ST_SCALED_OFFSETX > 0 &&
      ((SCREENHEIGHT != viewheight) ||
      ((automapmode & am_active) && ! (automapmode & am_overlay))))
   {
     for (i = (SCREENHEIGHT - ST_SCALED_HEIGHT); i < SCREENHEIGHT; i++)
     {
-      R_VideoErase (0, i, wide_offsetx);
-      R_VideoErase (SCREENWIDTH - wide_offsetx, i, wide_offsetx);
+      R_VideoErase (0, i, ST_SCALED_OFFSETX);
+      R_VideoErase (SCREENWIDTH - ST_SCALED_OFFSETX, i, ST_SCALED_OFFSETX);
     }
   }
 
   if ( viewheight >= ( SCREENHEIGHT - ST_SCALED_HEIGHT ))
-    return; // if high-res, don´t go any further!
+    return; // if high-res, don't go any further!
 
   top = ((SCREENHEIGHT-ST_SCALED_HEIGHT)-viewheight)/2;
   side = (SCREENWIDTH-scaledviewwidth)/2;

@@ -8,6 +8,7 @@
 
 #define MAX_CVARLEN 128
 #define MAX_CVARNAME 128
+#define CONFIG_TEMPLATE "app0:/data/prboom/prboom-plus.cfg"
 
 #define CVARF_HEX 0x01
 
@@ -37,6 +38,44 @@ struct Config
 
 static struct Config cfg_main = { 0, CONFIG_FILENAME };
 
+static int ConfigInstallDefault(const char *dstname)
+{
+    FILE *src = fopen(CONFIG_TEMPLATE, "rb");
+    FILE *dst;
+    char buf[1024];
+    size_t len;
+
+    if (!src) return 1;
+
+    dst = fopen(dstname, "wb");
+    if (!dst)
+    {
+        fclose(src);
+        return 1;
+    }
+
+    while ((len = fread(buf, 1, sizeof(buf), src)) > 0)
+    {
+        if (fwrite(buf, 1, len, dst) != len)
+        {
+            fclose(src);
+            fclose(dst);
+            return 1;
+        }
+    }
+
+    if (ferror(src))
+    {
+        fclose(src);
+        fclose(dst);
+        return 1;
+    }
+
+    fclose(src);
+    fclose(dst);
+    return 0;
+}
+
 static int ConfigLoad(struct Config *cfg)
 {
     char buf[512];
@@ -44,7 +83,12 @@ static int ConfigLoad(struct Config *cfg)
     snprintf(buf, sizeof(buf), "%s/%s", FS_GetBaseDir(), cfg->name);
 
     FILE *f = fopen(buf, "r");
-    if (!f) return 1;
+    if (!f)
+    {
+        if (ConfigInstallDefault(buf)) return 1;
+        f = fopen(buf, "r");
+        if (!f) return 1;
+    }
 
     while (!feof(f))
     {

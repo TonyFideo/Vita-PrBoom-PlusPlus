@@ -29,6 +29,8 @@
 
 #include "statdump.h"
 
+#include "m_io.h"
+
 /* Par times for E1M1-E1M9. */
 static const int doom1_par_times[] =
 {
@@ -335,7 +337,7 @@ void StatDump(void)
 
         if (strcmp(myargv[i + 1], "-") != 0)
         {
-            dumpfile = fopen(myargv[i + 1], "w");
+            dumpfile = M_fopen(myargv[i + 1], "w");
         }
         else
         {

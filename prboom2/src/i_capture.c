@@ -36,8 +36,10 @@
 #include "i_sound.h"
 #include "i_video.h"
 #include "lprintf.h"
+#include "i_system.h"
 #include "i_capture.h"
 
+#include "m_io.h"
 
 int capturing_video = 0;
 static const char *vid_fname;
@@ -69,6 +71,7 @@ const char *cap_tempfile2;
 int cap_remove_tempfiles;
 int cap_fps;
 int cap_frac;
+int cap_wipescreen;
 
 // parses a command with simple printf-style replacements.
 
@@ -142,7 +145,7 @@ static int my_popen3 (pipeinfo_t *p); // 1 on success
 static void my_pclose3 (pipeinfo_t *p);
 
 
-#if defined(_WIN32)
+#ifdef _WIN32
 // direct winapi implementation
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN 1
@@ -313,7 +316,7 @@ static void my_pclose3 (pipeinfo_t *p)
 }
 
 #elif defined(__vita__)
-// can't do shit on the vita
+// Vita has no supported subprocess/pipe path for video capture.
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -479,7 +482,7 @@ static int threadstdoutproc (void *data)
 
   pipeinfo_t *p = (pipeinfo_t *) data;
 
-  FILE *f = fopen (p->stdoutdumpname, "w");
+  FILE *f = M_fopen (p->stdoutdumpname, "w");
 
   if (!f || !p->f_stdout)
     return 0;
@@ -499,7 +502,7 @@ static int threadstderrproc (void *data)
 
   pipeinfo_t *p = (pipeinfo_t *) data;
 
-  FILE *f = fopen (p->stderrdumpname, "w");
+  FILE *f = M_fopen (p->stderrdumpname, "w");
 
   if (!f || !p->f_stderr)
     return 0;
@@ -567,7 +570,7 @@ void I_CapturePrep (const char *fn)
   videopipe.outthread = SDL_CreateThread (threadstdoutproc, "videopipe.outthread", &videopipe);
   videopipe.errthread = SDL_CreateThread (threadstderrproc, "videopipe.errthread", &videopipe);
 
-  atexit (I_CaptureFinish);
+  I_AtExit (I_CaptureFinish, true);
 }
 
 
@@ -656,7 +659,7 @@ void I_CaptureFinish (void)
   // unlink any files user wants gone
   if (cap_remove_tempfiles)
   {
-    remove (cap_tempfile1);
-    remove (cap_tempfile2);
+    M_remove (cap_tempfile1);
+    M_remove (cap_tempfile2);
   }
 }

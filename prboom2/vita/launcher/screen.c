@@ -33,13 +33,13 @@ int R_Init(void)
 
 void R_Free(void)
 {
-    vita2d_fini();
-
     if (fnt_main) vita2d_free_pgf(fnt_main);
     if (fnt_buttons) vita2d_free_texture(fnt_buttons);
 
     fnt_main = NULL;
     fnt_buttons = NULL;
+    vita2d_fini();
+    drawing = 0;
 }
 
 void R_BeginDrawing(void)

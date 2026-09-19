@@ -42,9 +42,9 @@
 #endif
 #ifdef GL_DOOM
 #ifdef __vita__
-# include <vitaGL.h>
+#include <vitaGL.h>
 #else
-# include <SDL_opengl.h>
+#include <SDL_opengl.h>
 #endif
 #endif
 #include <string.h>
@@ -91,6 +91,8 @@
 #include "d_deh.h"
 #include "e6y.h"
 
+#include "m_io.h"
+
 dboolean wasWiped = false;
 
 int secretfound;
@@ -107,7 +109,8 @@ const char *avi_shot_fname;
 dboolean doSkip;
 dboolean demo_stoponnext;
 dboolean demo_stoponend;
-dboolean demo_warp;
+static dboolean demo_warp;
+extern int warpepisode, warpmap;
 
 int key_speed_up;
 int key_speed_down;
@@ -127,6 +130,7 @@ int hudadd_demotime;
 int hudadd_secretarea;
 int hudadd_smarttotals;
 int hudadd_demoprogressbar;
+int hudadd_timests;
 int hudadd_crosshair;
 int hudadd_crosshair_scale;
 int hudadd_crosshair_color;
@@ -137,6 +141,7 @@ int hudadd_crosshair_lock_target;
 int movement_strafe50;
 int movement_shorttics;
 int movement_mouselook;
+int movement_mousenovert;
 int movement_mouseinvert;
 int movement_maxviewpitch;
 int movement_mousestrafedivisor;
@@ -217,7 +222,7 @@ void e6y_assert(const char *format, ...)
   va_list argptr;
   va_start(argptr,format);
   //if (!f)
-    f = fopen("d:\\a.txt", "ab+");
+    f = M_fopen("d:\\a.txt", "ab+");
   vfprintf(f, format, argptr);
   fclose(f);
   va_end(argptr);
@@ -285,7 +290,7 @@ void e6y_InitCommandLine(void)
       demo_skiptics = (int) (sec * TICRATE);
   }
 
-  if ((IsDemoPlayback() || IsDemoContinue()) && (startmap > 1 || demo_skiptics))
+  if ((IsDemoPlayback() || IsDemoContinue()) && (warpmap != -1 || demo_skiptics))
     G_SkipDemoStart();
   if ((p = M_CheckParm("-avidemo")) && (p < myargc-1))
     avi_shot_fname = myargv[p + 1];
@@ -343,6 +348,8 @@ void G_SkipDemoStop(void)
   doSkip = false;
   demo_skiptics = 0;
   startmap = 0;
+  warpmap = -1;
+  warpepisode = -1;
 
   I_Init2();
   if (!sound_inited_once && !(nomusicparm && nosfxparm))
@@ -360,11 +367,17 @@ void G_SkipDemoStop(void)
 #endif
 }
 
+void G_SkipDemoStartCheck(void)
+{
+  if (doSkip && (gamemode == commercial ? (warpmap == gamemap) : (warpepisode == gameepisode && warpmap == gamemap)))
+    demo_warp = true;
+}
+
 void G_SkipDemoCheck(void)
 {
   if (doSkip && gametic > 0)
   {
-    if (((startmap <= 1) && 
+    if (((warpmap == -1) &&
          (gametic > demo_skiptics + (demo_skiptics > 0 ? 0 : demo_tics_count))) ||
         (demo_warp && gametic - levelstarttic > demo_skiptics))
      {
@@ -379,9 +392,15 @@ int G_ReloadLevel(void)
 
   if ((gamestate == GS_LEVEL) &&
       !deathmatch && !netgame &&
-      !demorecording && !demoplayback &&
+      !democontinue && !demoplayback &&
       !menuactive)
   {
+    // restart demos from the map they were started
+    if (demorecording)
+    {
+      gameepisode = startepisode;
+      gamemap = startmap;
+    }
     G_DeferedInitNew(gameskill, gameepisode, gamemap);
     result = true;
   }
@@ -389,7 +408,11 @@ int G_ReloadLevel(void)
   return result;
 }
 
-int G_GotoNextLevel(void)
+// [FG] Write the episode and map number of the next level
+//      to the e and m pointers, respectively, or outright
+//      warp to this level if both are NULL.
+
+int G_GotoNextLevel(int *e, int *m)
 {
 	static byte doom2_next[33] = {
 	  2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
@@ -409,10 +432,15 @@ int G_GotoNextLevel(void)
 	int changed = false;
 	if (gamemapinfo != NULL)
 	{
-		const char *n;
+		const char *n = NULL;
 		if (gamemapinfo->nextsecret[0]) n = gamemapinfo->nextsecret;
-		else n = gamemapinfo->nextmap;
-		G_ValidateMapName(n, &epsd, &map);
+		else if (gamemapinfo->nextmap[0]) n = gamemapinfo->nextmap;
+		else if (gamemapinfo->endpic[0] && gamemapinfo->endpic[0] != '-')
+		{
+			epsd = 1;
+			map = 1;
+		}
+		if (n) G_ValidateMapName(n, &epsd, &map);
 	}
 
 	if (map == -1)
@@ -440,30 +468,57 @@ int G_GotoNextLevel(void)
 			(compatibility_level < ultdoom_compatibility) ?
 			11 : 41);
 
-		if ((gamestate == GS_LEVEL) &&
-			!deathmatch && !netgame &&
-			!demorecording && !demoplayback &&
-			!menuactive)
-		{
-			//doom2_next and doom_next are 0 based, unlike gameepisode and gamemap
-			epsd = gameepisode - 1;
-			map = gamemap - 1;
+		//doom2_next and doom_next are 0 based, unlike gameepisode and gamemap
+		epsd = gameepisode - 1;
+		map = gamemap - 1;
 
-			if (gamemode == commercial)
-			{
-				epsd = 1;
-				map = doom2_next[BETWEEN(0, 32, map)];
-			}
+		if (gamemode == commercial)
+		{
+			epsd = 1;
+			if (map >= 0 && map <= 32)
+				map = doom2_next[map];
 			else
+				map = gamemap + 1;
+		}
+		else
+		{
+			if (epsd >= 0 && epsd <= 3 && map >= 0 && map <= 8)
 			{
-				int next = doom_next[BETWEEN(0, 3, epsd)][BETWEEN(0, 9, map)];
+				int next = doom_next[epsd][map];
 				epsd = next / 10;
 				map = next % 10;
 			}
+			else
+			{
+				epsd = gameepisode;
+				map = gamemap + 1;
+			}
 		}
 	}
-	G_DeferedInitNew(gameskill, epsd, map);
-	changed = true;
+
+	// [FG] report next level without changing
+	if (e || m)
+	{
+		if (e) *e = epsd;
+		if (m) *m = map;
+	}
+	else if ((gamestate == GS_LEVEL) &&
+		!deathmatch && !netgame &&
+		!demorecording && !demoplayback &&
+		!menuactive)
+	{
+		char *next = MAPNAME(epsd, map);
+
+		if (W_CheckNumForName(next) == -1)
+		{
+		  doom_printf("Next level not found: %s", next);
+		}
+		else
+		{
+		  G_DeferedInitNew(gameskill, epsd, map);
+		  changed = true;
+		}
+	}
 
 	return changed;
 }
@@ -519,14 +574,9 @@ void M_ChangeMaxViewPitch(void)
   viewpitch = 0;
 }
 
-void M_ChangeScreenScaling(void)
+void M_ChangeScreenMultipleFactor(void)
 {
   V_ChangeScreenResolution();
-}
-
-void M_ChangeGamma(void)
-{
-  V_SetPalette(0);
 }
 
 dboolean GetMouseLook(void)
@@ -687,16 +737,6 @@ void M_ChangeTextureUseHires(void)
 void M_ChangeTextureHQResize(void)
 {
   gld_FlushTextures();
-}
-
-void M_ChangeGLGamma(void)
-{
-  if (V_GetMode() == VID_MODEGL && gl_hardware_gamma)
-  {
-    if (useglgamma > MAX_GLGAMMA || useglgamma < 0)
-      useglgamma = 0;
-    gld_SetGammaRamp(useglgamma);
-  }
 }
 #endif //GL_DOOM
 
@@ -930,11 +970,12 @@ void e6y_WriteStats(void)
   int i, level, playerscount;
   timetable_t max;
   tmpdata_t tmp;
-  tmpdata_t all[32];
+  tmpdata_t *all;
   size_t allkills_len=0, allitems_len=0, allsecrets_len=0;
 
-  f = fopen("levelstat.txt", "wb");
+  f = M_fopen("levelstat.txt", "wb");
   
+  all = malloc(sizeof(*all) * numlevels);
   memset(&max, 0, sizeof(timetable_t));
 
   playerscount = 0;
@@ -995,9 +1036,9 @@ void e6y_WriteStats(void)
     sprintf(str,
       "%%s - %%%dd:%%05.2f (%%%dd:%%02d)  K: %%%dd/%%-%dd%%%lds  I: %%%dd/%%-%dd%%%lds  S: %%%dd/%%-%dd %%%lds\r\n",
       max.stat[TT_TIME],      max.stat[TT_TOTALTIME],
-      max.stat[TT_ALLKILL],   max.stat[TT_TOTALKILL],   allkills_len,
-      max.stat[TT_ALLITEM],   max.stat[TT_TOTALITEM],   allitems_len,
-      max.stat[TT_ALLSECRET], max.stat[TT_TOTALSECRET], allsecrets_len);
+      max.stat[TT_ALLKILL],   max.stat[TT_TOTALKILL],   (long)allkills_len,
+      max.stat[TT_ALLITEM],   max.stat[TT_TOTALITEM],   (long)allitems_len,
+      max.stat[TT_ALLSECRET], max.stat[TT_TOTALSECRET], (long)allsecrets_len);
     
     fprintf(f, str, stats[level].map, 
       stats[level].stat[TT_TIME]/TICRATE/60,
@@ -1011,6 +1052,7 @@ void e6y_WriteStats(void)
     
   }
   
+  free(all);
   fclose(f);
 }
 
@@ -1019,29 +1061,9 @@ void e6y_G_DoWorldDone(void)
   if (doSkip)
   {
     static int firstmap = 1;
-    int episode = 0;
-    int map = 0;
-    int p;
-
-    if ((p = M_CheckParm ("-warp")))
-    {
-      if (gamemode == commercial)
-      {
-        if (p < myargc - 1)
-          map = atoi(myargv[p + 1]);
-      }
-      else
-      {
-        if (p < myargc - 2)
-        {
-          episode = atoi(myargv[++p]);
-          map = atoi(myargv[p + 1]);
-        }
-      }
-    }
 
     demo_warp = demo_stoponnext ||
-      (gamemode == commercial ? (map == gamemap) : (episode == gameepisode && map == gamemap));
+      (gamemode == commercial ? (warpmap == gamemap) : (warpepisode == gameepisode && warpmap == gamemap));
     
     if (demo_warp && demo_skiptics == 0 && !firstmap)
       G_SkipDemoStop();
@@ -1273,9 +1295,10 @@ int HU_DrawDemoProgress(int force)
   }
 
   prev_len = len;
-
+  
+#ifdef __vita__
   I_StartRendering();
-
+#endif
   V_FillRect(0, 0, SCREENHEIGHT - 4, len - 0, 4, 4);
   if (len > 4)
     V_FillRect(0, 2, SCREENHEIGHT - 3, len - 4, 2, 0);
@@ -1295,12 +1318,12 @@ int GetFullPath(const char* FileName, const char* ext, char *Buffer, size_t Buff
     switch(i)
     {
     case 0:
-      getcwd(dir, sizeof(dir));
+      M_getcwd(dir, sizeof(dir));
       break;
     case 1:
-      if (!getenv("DOOMWADDIR"))
+      if (!M_getenv("DOOMWADDIR"))
         continue;
-      strcpy(dir, getenv("DOOMWADDIR"));
+      strcpy(dir, M_getenv("DOOMWADDIR"));
       break;
     case 2:
       strcpy(dir, I_DoomExeDir());
@@ -1313,49 +1336,6 @@ int GetFullPath(const char* FileName, const char* ext, char *Buffer, size_t Buff
   }
 
   return false;
-}
-#endif
-
-#ifdef _WIN32
-#include <Mmsystem.h>
-#ifndef __GNUC__
-#pragma comment( lib, "winmm.lib" )
-#endif
-int mus_extend_volume;
-void I_midiOutSetVolumes(int volume)
-{
-  // NSM changed to work on the 0-15 volume scale,
-  // and to check mus_extend_volume itself.
-  
-  MMRESULT result;
-  int calcVolume;
-  MIDIOUTCAPS capabilities;
-  unsigned int i;
-
-  if (volume > 15)
-    volume = 15;
-  if (volume < 0)
-    volume = 0;
-  calcVolume = (65535 * volume / 15);
-
-  //SDL_LockAudio(); // this function doesn't touch anything the audio callback touches
-
-  //Device loop
-  for (i = 0; i < midiOutGetNumDevs(); i++)
-  {
-    //Get device capabilities
-    result = midiOutGetDevCaps(i, &capabilities, sizeof(capabilities));
-    if (result == MMSYSERR_NOERROR)
-    {
-      //Adjust volume on this candidate
-      if ((capabilities.dwSupport & MIDICAPS_VOLUME))
-      {
-        midiOutSetVolume((HMIDIOUT)i, MAKELONG(calcVolume, calcVolume));
-      }
-    }
-  }
-
-  //SDL_UnlockAudio();
 }
 #endif
 

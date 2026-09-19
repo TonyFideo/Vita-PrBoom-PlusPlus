@@ -91,7 +91,6 @@ extern const char *avi_shot_fname;
 extern dboolean doSkip;
 extern dboolean demo_stoponnext;
 extern dboolean demo_stoponend;
-extern dboolean demo_warp;
 
 extern int key_speed_up;
 extern int key_speed_down;
@@ -111,6 +110,7 @@ extern int hudadd_demotime;
 extern int hudadd_secretarea;
 extern int hudadd_smarttotals;
 extern int hudadd_demoprogressbar;
+extern int hudadd_timests;
 extern int hudadd_crosshair;
 extern int hudadd_crosshair_scale;
 extern int hudadd_crosshair_color;
@@ -121,6 +121,7 @@ extern int hudadd_crosshair_lock_target;
 extern int movement_strafe50;
 extern int movement_shorttics;
 extern int movement_mouselook;
+extern int movement_mousenovert;
 extern int movement_mouseinvert;
 extern int movement_maxviewpitch;
 extern int movement_mousestrafedivisor;
@@ -183,9 +184,10 @@ extern dboolean sound_inited_once;
 void e6y_I_uSleep(unsigned long usecs);
 void G_SkipDemoStart(void);
 void G_SkipDemoStop(void);
+void G_SkipDemoStartCheck(void);
 void G_SkipDemoCheck(void);
 int G_ReloadLevel(void);
-int G_GotoNextLevel(void);
+int G_GotoNextLevel(int *e, int *m);
 
 void M_ChangeMouseLook(void);
 void M_ChangeMaxViewPitch(void);
@@ -201,11 +203,9 @@ void M_ChangeAllowBoomColormaps(void);
 void M_ChangeTextureUseHires(void);
 void M_ChangeAllowFog(void);
 void M_ChangeTextureHQResize(void);
-void M_ChangeGLGamma(void);
 #endif
-void M_ChangeGamma(void);
 void M_ChangeSpeed(void);
-void M_ChangeScreenScaling(void);
+void M_ChangeScreenMultipleFactor(void);
 void M_ChangeInterlacedScanning(void);
 void M_MouseMLook(int choice);
 void M_MouseAccel(int choice);
@@ -355,10 +355,5 @@ void I_Warning(const char *message, ...);
 int I_MessageBox(const char* text, unsigned int type);
 
 dboolean SmoothEdges(unsigned char * buffer,int w, int h);
-
-#ifdef _WIN32
-extern int mus_extend_volume;
-void I_midiOutSetVolumes(int volume);
-#endif
 
 #endif

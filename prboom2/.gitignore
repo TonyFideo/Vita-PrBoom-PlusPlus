@@ -1,0 +1,47 @@
+# Local build directories
+/vitabuild/
+/vitabuild-ninja/
+/build/
+/build-*/
+
+# CMake and Ninja generated files
+**/CMakeCache.txt
+**/CMakeFiles/
+**/cmake_install.cmake
+**/install_manifest.txt
+**/build.ninja
+**/.ninja_deps
+**/.ninja_log
+**/compile_commands.json
+
+# Vita and compiler outputs
+*.o
+*.obj
+*.a
+*.elf
+*.velf
+*.self
+*.vpk
+*.self.out
+*.vpk.out
+*.vpk_param.sfo
+
+# Generated Vita data artifacts
+/data.zip
+/prboom-plus.wad
+/vita-data/
+
+# Runtime diagnostics and user state
+*.log
+*.dmp
+*.sav
+
+# IDE and operating-system files
+.vscode/
+.idea/
+*.user
+*.suo
+*.swp
+Thumbs.db
+Desktop.ini
+.DS_Store

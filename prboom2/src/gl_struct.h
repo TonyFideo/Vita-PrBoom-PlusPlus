@@ -35,9 +35,9 @@
 #define _GL_STRUCT_H
 
 #ifdef __vita__
-# include <vitaGL.h>
+#include <vitaGL.h>
 #else
-# include <SDL_opengl.h>
+#include <SDL_opengl.h>
 #endif
 
 extern int nodesVersion;
@@ -82,13 +82,17 @@ extern gl_lightmode_t gl_lightmode_default;
 extern const char *gl_lightmodes[];
 extern int gl_light_ambient;
 extern int useglgamma;
+#ifdef __vita__
 extern int gl_fake_gamma;
 extern int gl_fake_gamma_value;
+#endif
 int gld_SetGammaRamp(int gamma);
 void gld_CheckHardwareGamma(void);
 void gld_FlushTextures(void);
 void gld_ApplyGammaRamp(byte *buf, int pitch, int width, int height);
+#ifdef __vita__
 void gld_BlendFakeGamma(void);
+#endif
 void M_ChangeLightMode(void);
 
 //detail
@@ -136,6 +140,7 @@ void gld_AddWall(seg_t *seg);
 void gld_ProjectSprite(mobj_t* thing, int lightlevel);
 void gld_DrawScene(player_t *player);
 void gld_EndDrawScene(void);
+void gld_ProcessExtraAlpha(void);
 void gld_Finish();
 
 //stuff
@@ -186,6 +191,7 @@ dboolean gld_SphereInFrustum(float x, float y, float z, float radius);
 //missing flats (fake floors and ceilings)
 extern dboolean gl_use_stencil;
 sector_t* GetBestFake(sector_t *sector, int ceiling, int validcount);
+sector_t* GetBestBleedSector(sector_t* source, int ceiling);
 
 //shadows
 typedef struct shadow_params_s
@@ -211,6 +217,10 @@ void gld_DrawMapLines(void);
 
 //sprites
 typedef enum { spriteclip_const, spriteclip_always, spriteclip_smart } spriteclipmode_t;
+typedef enum { fuzz_darken, fuzz_shadow, fuzz_transparent, fuzz_ghostly, fuzz_last } spritefuzzmode_t;
+extern spritefuzzmode_t gl_thingspritefuzzmode;
+extern spritefuzzmode_t gl_weaponspritefuzzmode;
+extern const char *gl_spritefuzzmodes[];
 extern spriteclipmode_t gl_spriteclip;
 extern const char *gl_spriteclipmodes[];
 extern int gl_spriteclip_threshold;

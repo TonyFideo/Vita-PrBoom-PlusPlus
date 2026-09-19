@@ -120,8 +120,34 @@ static const crdef_t crdefs[] = {
   {"CRORANGE", &colrngs[CR_ORANGE]},
   {"CRYELLOW", &colrngs[CR_YELLOW]},
   {"CRBLUE2",  &colrngs[CR_BLUE2]},
+  {"CRBLACK",  &colrngs[CR_BLACK]},
+  {"CRPURPLE", &colrngs[CR_PURPLE]},
+  {"CRWHITE",  &colrngs[CR_WHITE]},
   {NULL}
 };
+
+// [FG] translate between blood color value as per EE spec
+//      and actual color translation table index
+
+static const int bloodcolor[] = {
+  CR_RED,    // 0 - Red (normal)
+  CR_GRAY,   // 1 - Grey
+  CR_GREEN,  // 2 - Green
+  CR_BLUE2,  // 3 - Blue
+  CR_YELLOW, // 4 - Yellow
+  CR_BLACK,  // 5 - Black
+  CR_PURPLE, // 6 - Purple
+  CR_WHITE,  // 7 - White
+  CR_ORANGE, // 8 - Orange
+};
+
+int V_BloodColor(int blood)
+{
+  if (blood < 0 || blood > 8)
+    blood = 0;
+
+  return bloodcolor[blood];
+}
 
 // haleyjd: DOSDoom-style single translucency lookup-up table
 // generation code. This code has a 32k (plus a bit more) 
@@ -239,11 +265,32 @@ static void FUNC_V_CopyRect(int srcscrn, int destscrn,
     y += params->deltay1;
   }
 
-#ifdef RANGECHECK
-  if (x < 0 || x + width > SCREENWIDTH ||
-      y < 0 || y + height > SCREENHEIGHT)
-    I_Error ("V_CopyRect: Bad arguments");
-#endif
+  if (x < 0)
+  {
+    width += x;
+    x = 0;
+  }
+
+  if (x + width > SCREENWIDTH)
+  {
+    width = SCREENWIDTH - x;
+  }
+
+  if (y < 0)
+  {
+    height += y;
+    y = 0;
+  }
+
+  if (y + height > SCREENHEIGHT)
+  {
+    height = SCREENHEIGHT - y;
+  }
+
+  if (width <= 0 || height <= 0)
+  {
+    return;
+  }
 
   src = screens[srcscrn].data + screens[srcscrn].byte_pitch * y + x * pixel_depth;
   dest = screens[destscrn].data + screens[destscrn].byte_pitch * y + x * pixel_depth;
@@ -425,6 +472,10 @@ static void V_DrawMemPatch(int x, int y, int scrn, const rpatch_t *patch,
   if (!trans)
     flags &= ~VPT_TRANS;
 
+  // [FG] automatically center wide patches without horizontal offset
+  if (patch->width > 320 && patch->leftoffset == 0)
+    x -= (patch->width - 320) / 2;
+
   if (V_GetMode() == VID_MODE8 && !(flags & VPT_STRETCH_MASK)) {
     int             col;
     byte           *desttop = screens[scrn].data+y*screens[scrn].byte_pitch+x*V_GetPixelDepth();
@@ -559,7 +610,7 @@ static void V_DrawMemPatch(int x, int y, int scrn, const rpatch_t *patch,
       top =  (y < 0 || y > 200 ? (y * params->video->height) / 200 : params->video->y1lookup[y]);
 
       if (x + patch->width < 0 || x + patch->width > 320)
-        right = ( ((x + patch->width - 1) * params->video->width) / 320 );
+        right = ( ((x + patch->width) * params->video->width - 1) / 320 );
       else
         right = params->video->x2lookup[x + patch->width - 1];
 
@@ -1034,10 +1085,6 @@ V_DrawLineWu_f V_DrawLineWu = NULL_DrawLineWu;
 // V_InitMode
 //
 void V_InitMode(video_mode_t mode) {
-#ifndef GL_DOOM
-  if (mode == VID_MODEGL)
-    mode = VID_MODE8;
-#endif
   switch (mode) {
     case VID_MODE8:
       lprintf(LO_INFO, "V_InitMode: using 8 bit video mode\n");
@@ -1583,11 +1630,12 @@ void SetRatio(int width, int height)
   // The terms storage aspect ratio, pixel aspect ratio, and display aspect
   // ratio came from Wikipedia.  SAR x PAR = DAR
   lprintf(LO_INFO, "SetRatio: storage aspect ratio %u:%u\n", ratio_multiplier, ratio_scale);
-  if ((width == 320 && height == 200) || (width == 640 && height == 400))
+  if (height == 200 || height == 400)
   {
     lprintf(LO_INFO, "SetRatio: recognized VGA mode with pixel aspect ratio 5:6\n");
-    ratio_multiplier = 4;
-    ratio_scale = 3;
+    ratio_multiplier = width * 5;
+    ratio_scale = height * 6;
+    ReduceFraction(&ratio_multiplier, &ratio_scale);
   }
   else
   {
@@ -1687,7 +1735,6 @@ void SetRatio(int width, int height)
     patches_scaley = MIN(render_patches_scaley, patches_scaley);
   }
 
-  ST_SCALED_WIDTH = ST_WIDTH * patches_scalex;
   ST_SCALED_HEIGHT = ST_HEIGHT * patches_scaley;
 
   if (SCREENWIDTH < 320 || WIDE_SCREENWIDTH < 320 ||
@@ -1706,7 +1753,6 @@ void SetRatio(int width, int height)
     break;
   case patch_stretch_4x3:
     ST_SCALED_HEIGHT = ST_HEIGHT * WIDE_SCREENHEIGHT / 200;
-    ST_SCALED_WIDTH  = WIDE_SCREENWIDTH;
 
     ST_SCALED_Y = SCREENHEIGHT - ST_SCALED_HEIGHT;
     
@@ -1715,7 +1761,6 @@ void SetRatio(int width, int height)
     break;
   case patch_stretch_full:
     ST_SCALED_HEIGHT = ST_HEIGHT * SCREENHEIGHT / 200;
-    ST_SCALED_WIDTH  = SCREENWIDTH;
 
     ST_SCALED_Y = SCREENHEIGHT - ST_SCALED_HEIGHT;
     wide_offset2x = 0;
@@ -1729,6 +1774,9 @@ void SetRatio(int width, int height)
   SCREEN_320x200 =
     (SCREENWIDTH == 320) && (SCREENHEIGHT == 200) &&
     (WIDE_SCREENWIDTH == 320) && (WIDE_SCREENHEIGHT == 200);
+
+  // [FG] support widescreen status bar backgrounds
+  ST_SetScaledWidth();
 }
 
 void V_GetWideRect(int *x, int *y, int *w, int *h, enum patch_translation_e flags)
@@ -1815,7 +1863,7 @@ void V_ChangeScreenResolution(void)
 #if defined(GL_DOOM) && defined(__vita__)
   if (V_GetMode() == VID_MODEGL)
   {
-    // don't allow resolution changing in GL mode
+    // The VitaGL framebuffer is fixed by I_InitGraphics.
     return;
   }
 #endif

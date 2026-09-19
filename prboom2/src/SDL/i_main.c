@@ -84,23 +84,52 @@ typedef BOOL (WINAPI *SetAffinityFunc)(HANDLE hProcess, DWORD mask);
  * cphipps - much made static
  */
 
+static int basetime = 0;
+
+static int I_GetTime_MS(void)
+{
+  int ticks = SDL_GetTicks();
+
+  if (basetime == 0)
+    basetime = ticks;
+
+  return ticks - basetime;
+}
+
+int ms_to_next_tick;
+
+int I_GetTime_RealTime (void)
+{
+  int64_t t = I_GetTime_MS();
+  int64_t i = t * TICRATE / 1000;
+
+  ms_to_next_tick = (i + 1) * 1000 / TICRATE - t;
+  ms_to_next_tick = BETWEEN(0, 1000 / TICRATE, ms_to_next_tick);
+
+  return i;
+}
+
 int realtic_clock_rate = 100;
-static int_64_t I_GetTime_Scale = 1<<24;
 
 static int I_GetTime_Scaled(void)
 {
-  return (int)( (int_64_t) I_GetTime_RealTime() * I_GetTime_Scale >> 24);
+  int64_t t = I_GetTime_MS();
+  int64_t i = t * TICRATE * realtic_clock_rate / 100000;
+
+  ms_to_next_tick = (i + 1) * 100000 / realtic_clock_rate / TICRATE - t;
+  ms_to_next_tick = BETWEEN(0, 100000 / realtic_clock_rate / TICRATE, ms_to_next_tick);
+
+  return i;
 }
-
-
 
 static int  I_GetTime_FastDemo(void)
 {
   static int fasttic;
+
+  ms_to_next_tick = 0;
+
   return fasttic++;
 }
-
-
 
 static int I_GetTime_Error(void)
 {
@@ -108,47 +137,92 @@ static int I_GetTime_Error(void)
   return 0;
 }
 
-
-
 int (*I_GetTime)(void) = I_GetTime_Error;
+
+// During a fast demo, no time elapses in between ticks
+static int I_TickElapsedTime_FastDemo(void)
+{
+  return 0;
+}
+
+static int I_TickElapsedTime_RealTime(void)
+{
+  return (int64_t)I_GetTime_MS() * TICRATE % 1000 * FRACUNIT / 1000;
+}
+
+static int I_TickElapsedTime_Scaled(void)
+{
+  return (int64_t)I_GetTime_MS() * realtic_clock_rate * TICRATE / 100 % 1000 * FRACUNIT / 1000;
+}
+
+int (*I_TickElapsedTime)(void) = I_TickElapsedTime_RealTime;
 
 void I_Init(void)
 {
+#ifdef __vita__
+  I_VitaTrace("I_Init: enter");
+#endif
   /* killough 4/14/98: Adjustable speedup based on realtic_clock_rate */
   if (fastdemo)
+  {
     I_GetTime = I_GetTime_FastDemo;
+    I_TickElapsedTime = I_TickElapsedTime_FastDemo;
+  }
   else
     if (realtic_clock_rate != 100)
       {
-        I_GetTime_Scale = ((int_64_t) realtic_clock_rate << 24) / 100;
         I_GetTime = I_GetTime_Scaled;
+        I_TickElapsedTime = I_TickElapsedTime_Scaled;
       }
     else
+    {
       I_GetTime = I_GetTime_RealTime;
+      I_TickElapsedTime = I_TickElapsedTime_RealTime;
+    }
 
   {
     /* killough 2/21/98: avoid sound initialization if no sound & no music */
     if (!(nomusicparm && nosfxparm))
+    {
+#ifdef __vita__
+      I_VitaTrace("I_Init: I_InitSound enter");
+#endif
       I_InitSound();
+#ifdef __vita__
+      I_VitaTrace("I_Init: I_InitSound ready");
+#endif
+    }
   }
 
+#ifdef __vita__
+  I_VitaTrace("I_Init: R_InitInterpolation enter");
+#endif
   R_InitInterpolation();
+#ifdef __vita__
+  I_VitaTrace("I_Init: leave");
+#endif
 }
 
 //e6y
 void I_Init2(void)
 {
   if (fastdemo)
+  {
     I_GetTime = I_GetTime_FastDemo;
+    I_TickElapsedTime = I_TickElapsedTime_FastDemo;
+  }
   else
   {
     if (realtic_clock_rate != 100)
       {
-        I_GetTime_Scale = ((int_64_t) realtic_clock_rate << 24) / 100;
         I_GetTime = I_GetTime_Scaled;
+        I_TickElapsedTime = I_TickElapsedTime_Scaled;
       }
     else
+    {
       I_GetTime = I_GetTime_RealTime;
+      I_TickElapsedTime = I_TickElapsedTime_RealTime;
+    }
   }
   R_InitInterpolation();
   force_singletics_to = gametic + BACKUPTICS;
@@ -344,7 +418,33 @@ static void I_EndDoom(void)
   }
 }
 
-static int has_exited;
+// Schedule a function to be called when the program exits.
+// If run_if_error is true, the function is called if the exit
+// is due to an error (I_Error)
+// Copyright(C) 2005-2014 Simon Howard
+
+typedef struct atexit_listentry_s atexit_listentry_t;
+
+struct atexit_listentry_s
+{
+    atexit_func_t func;
+    dboolean run_on_error;
+    atexit_listentry_t *next;
+};
+
+static atexit_listentry_t *exit_funcs = NULL;
+
+void I_AtExit(atexit_func_t func, dboolean run_on_error)
+{
+    atexit_listentry_t *entry;
+
+    entry = malloc(sizeof(*entry));
+
+    entry->func = func;
+    entry->run_on_error = run_on_error;
+    entry->next = exit_funcs;
+    exit_funcs = entry;
+}
 
 /* I_SafeExit
  * This function is called instead of exit() by functions that might be called
@@ -354,26 +454,31 @@ static int has_exited;
 
 void I_SafeExit(int rc)
 {
-  if (!has_exited)    /* If it hasn't exited yet, exit now -- killough */
+  atexit_listentry_t *entry;
+
+  // Run through all exit functions
+
+  while ((entry = exit_funcs))
+  {
+    exit_funcs = exit_funcs->next;
+
+    if (rc == 0 || entry->run_on_error)
     {
-      has_exited=rc ? 2 : 1;
-      exit(rc);
+      entry->func();
     }
+  }
+
+  exit(rc);
 }
 
 static void I_Quit (void)
 {
-  if (!has_exited)
-    has_exited=1;   /* Prevent infinitely recursive exits -- killough */
-
-  if (has_exited == 1) {
-    if (!demorecording)
-      I_EndDoom();
-    if (demorecording)
-      G_CheckDemoStatus();
-    M_SaveDefaults ();
-    I_DemoExShutdown();
-  }
+  if (!demorecording)
+    I_EndDoom();
+  if (demorecording)
+    G_CheckDemoStatus();
+  M_SaveDefaults ();
+  I_DemoExShutdown();
 }
 
 #ifdef SECURE_UID
@@ -515,8 +620,6 @@ int main(int argc, char **argv)
   myargv = (char**)malloc(sizeof(myargv[0]) * myargc);
   memcpy(myargv, argv, sizeof(myargv[0]) * myargc);
 
-  log_to_file = M_CheckParm("-logfile");
-
   // e6y: Check for conflicts.
   // Conflicting command-line parameters could cause the engine to be confused 
   // in some cases. Added checks to prevent this.
@@ -534,7 +637,7 @@ int main(int argc, char **argv)
   PrintVer();
 
   /* cph - Z_Close must be done after I_Quit, so we register it first. */
-  atexit(Z_Close);
+  I_AtExit(Z_Close, true);
   /*
      killough 1/98:
 
@@ -553,7 +656,7 @@ int main(int argc, char **argv)
 
   Z_Init();                  /* 1/18/98 killough: start up memory stuff first */
 
-  atexit(I_Quit);
+  I_AtExit(I_Quit, false);
 #ifndef PRBOOM_DEBUG
   if (!M_CheckParm("-devparm"))
   {

@@ -140,6 +140,20 @@ void W_DoneCache(void)
   mapped_wad = NULL;
 }
 
+static wchar_t* ConvertToUtf8(const char *str)
+{
+  wchar_t *wstr = NULL;
+  int wlen = 0;
+
+  wlen = MultiByteToWideChar(CP_UTF8, 0, str, -1, NULL, 0);
+
+  wstr = (wchar_t *) malloc(sizeof(wchar_t) * wlen);
+
+  MultiByteToWideChar(CP_UTF8, 0, str, -1, wstr, wlen);
+
+  return wstr;
+}
+
 void W_InitCache(void)
 {
   // set up caching
@@ -148,7 +162,7 @@ void W_InitCache(void)
     I_Error ("W_Init: Couldn't allocate lumpcache");
 
 #ifdef TIMEDIAG
-  atexit(W_ReportLocks);
+  I_AtExit(W_ReportLocks, true);
 #endif
 
   mapped_wad = calloc(numwadfiles,sizeof(mmap_info_t));
@@ -169,9 +183,11 @@ void W_InitCache(void)
 #endif
       if (!mapped_wad[wad_index].data)
       {
-        mapped_wad[wad_index].hnd = CreateFile(wadfiles[wad_index].name,
+        wchar_t *wname = ConvertToUtf8(wadfiles[wad_index].name);
+        mapped_wad[wad_index].hnd = CreateFileW(wname,
           GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
           NULL, OPEN_EXISTING, 0, NULL);
+        free(wname);
         if (mapped_wad[wad_index].hnd==INVALID_HANDLE_VALUE)
           I_Error("W_InitCache: CreateFile for memory mapping failed (LastError %i)",GetLastError());
         mapped_wad[wad_index].hnd_map =
@@ -227,7 +243,7 @@ void W_InitCache(void)
     I_Error ("W_Init: Couldn't allocate lumpcache");
 
 #ifdef TIMEDIAG
-  atexit(W_ReportLocks);
+  I_AtExit(W_ReportLocks, true);
 #endif
 
   {
@@ -317,12 +333,6 @@ const void* W_LockLumpNum(int lump)
     cachelump[lump].locks += 1;
   }
 
-#ifdef SIMPLECHECKS
-  if (!((cachelump[lump].locks+1) & 0xf))
-    lprintf(LO_DEBUG, "W_CacheLumpNum: High lock on %.8s (%d)\n",
-      lumpinfo[lump].name, cachelump[lump].locks);
-#endif
-
   return cachelump[lump].cache;
 }
 
@@ -330,11 +340,6 @@ void W_UnlockLumpNum(int lump) {
   if (cachelump[lump].locks == -1)
     return; // this lump is memory mapped
 
-#ifdef SIMPLECHECKS
-  if (cachelump[lump].locks == 0)
-    lprintf(LO_DEBUG, "W_UnlockLumpNum: Excess unlocks on %8s\n",
-      lumpinfo[lump].name);
-#endif
   cachelump[lump].locks -= 1;
   /* cph - Note: must only tell z_zone to make purgeable if currently locked,
    * else it might already have been purged

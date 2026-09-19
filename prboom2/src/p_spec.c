@@ -109,7 +109,7 @@ void MarkAnimatedTextures(void)
 #ifdef GL_DOOM
   anim_t* anim;
 
-  anim_textures = calloc(r_numtextures, sizeof(TAnimItemParam));
+  anim_textures = calloc(numtextures, sizeof(TAnimItemParam));
   anim_flats = calloc(numflats, sizeof(TAnimItemParam));
 
   for (anim = anims ; anim < lastanim ; anim++)
@@ -691,10 +691,12 @@ fixed_t P_FindShortestTextureAround(int secnum)
     if (twoSided(secnum, i))
     {
       side = getSide(secnum,i,0);
+      // COMPAT: MBF compares >= 0 here
       if (side->bottomtexture > 0)  //jff 8/14/98 texture 0 is a placeholder
         if (textureheight[side->bottomtexture] < minsize)
           minsize = textureheight[side->bottomtexture];
       side = getSide(secnum,i,1);
+      // COMPAT: MBF compares >= 0 here
       if (side->bottomtexture > 0)  //jff 8/14/98 texture 0 is a placeholder
         if (textureheight[side->bottomtexture] < minsize)
           minsize = textureheight[side->bottomtexture];
@@ -730,10 +732,12 @@ fixed_t P_FindShortestUpperAround(int secnum)
     if (twoSided(secnum, i))
     {
       side = getSide(secnum,i,0);
+      // COMPAT: MBF compares >= 0 here
       if (side->toptexture > 0)     //jff 8/14/98 texture 0 is a placeholder
         if (textureheight[side->toptexture] < minsize)
           minsize = textureheight[side->toptexture];
       side = getSide(secnum,i,1);
+      // COMPAT: MBF compares >= 0 here
       if (side->toptexture > 0)     //jff 8/14/98 texture 0 is a placeholder
         if (textureheight[side->toptexture] < minsize)
           minsize = textureheight[side->toptexture];
@@ -2536,7 +2540,7 @@ void P_UpdateSpecials (void)
           /* don't take the address of the switch's sound origin,
            * unless in a compatibility mode. */
           mobj_t *so = (mobj_t *)buttonlist[i].soundorg;
-          if (comp[comp_sound] || compatibility_level < prboom_6_compatibility)
+          if (default_comp[comp_sound] || compatibility_level < prboom_6_compatibility)
             /* since the buttonlist array is usually zeroed out,
              * button popouts generally appear to come from (0,0) */
             so = (mobj_t *)&buttonlist[i].soundorg;
@@ -2682,6 +2686,29 @@ void P_SpawnSpecials (void)
 
   P_SpawnScrollers(); // killough 3/7/98: Add generalized scrollers
 
+  // allow MBF sky transfers in all complevels
+
+  if (comp_skytransfers || !demo_compatibility)
+   for (i=0; i<numlines; i++)
+    switch (lines[i].special)
+    {
+      int s;
+        // killough 10/98:
+        //
+        // Support for sky textures being transferred from sidedefs.
+        // Allows scrolling and other effects (but if scrolling is
+        // used, then the same sector tag needs to be used for the
+        // sky sector, the sky-transfer linedef, and the scroll-effect
+        // linedef). Still requires user to use F_SKY1 for the floor
+        // or ceiling texture, to distinguish floor and ceiling sky.
+
+      case 271:   // Regular sky
+      case 272:   // Same, only flipped
+          for (s = -1; (s = P_FindSectorFromLineTag(lines+i,s)) >= 0;)
+            sectors[s].sky = i | PL_SKYFLAT;
+        break;
+   }
+
   // e6y
   if (demo_compatibility)
     return;
@@ -2717,27 +2744,6 @@ void P_SpawnSpecials (void)
         sec = sides[*lines[i].sidenum].sector->iSectorID;
         for (s = -1; (s = P_FindSectorFromLineTag(lines+i,s)) >= 0;)
           sectors[s].ceilinglightsec = sec;
-        break;
-
-        // killough 10/98:
-        //
-        // Support for sky textures being transferred from sidedefs.
-        // Allows scrolling and other effects (but if scrolling is
-        // used, then the same sector tag needs to be used for the
-        // sky sector, the sky-transfer linedef, and the scroll-effect
-        // linedef). Still requires user to use F_SKY1 for the floor
-        // or ceiling texture, to distinguish floor and ceiling sky.
-
-      case 271:   // Regular sky
-      case 272:   // Same, only flipped
-        /* e6y: It was the bad idea
-        // e6y: sky property-transfer linedef types should be applied only for MBF and above
-        if (compatibility_level >= mbf_compatibility ||
-          prboom_comp[PC_ALLOW_SKY_TRANSFER_IN_BOOM].state)
-        {*/
-          for (s = -1; (s = P_FindSectorFromLineTag(lines+i,s)) >= 0;)
-            sectors[s].sky = i | PL_SKYFLAT;
-        //}
         break;
    }
 }

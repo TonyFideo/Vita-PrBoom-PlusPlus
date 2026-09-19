@@ -42,13 +42,12 @@
 //#define USE_VBO
 
 #include <SDL.h>
-
 #ifdef __vita__
 
 #include <vitaGL/source/vitaGL.h>
 #include <libtess/glu.h>
 
-// some extension function types that we won't use
+// VitaGL's legacy client-array path is used by the original Vita port.
 typedef void (*PFNGLCOLORTABLEEXTPROC) (GLenum target, GLenum internalFormat, GLsizei width, GLenum format, GLenum type, const GLvoid *table);
 typedef void (*PFNGLACTIVETEXTUREARBPROC)(GLenum texture);
 typedef void (*PFNGLCLIENTACTIVETEXTUREARBPROC) (GLenum texture);
@@ -65,26 +64,20 @@ typedef void (*PFNGLGETBUFFERPARAMETERIVARBPROC) (GLenum target, GLenum pname, G
 typedef void *(*PFNGLMAPBUFFERARBPROC) (GLenum target, GLenum access);
 typedef GLboolean (*PFNGLUNMAPBUFFERARBPROC) (GLenum target);
 
-// don't have display lists
-
+// The fork does not implement display lists and a few fixed-function calls.
 #define glGenLists(n) (0)
 #define glNewList(i, m) do {} while (0)
 #define glEndList() do {} while (0)
 #define glDeleteLists(x, y) do {} while (0)
 #define glCallList(n) do {} while (0)
 #define glPixelStorei(x, y) do {} while (0)
-
-// don't have these either
-
 #define glFlush() do {} while (0)
 #define glHint(x, y) do {} while (0)
 #define glTexGenf(x, y, z) do {} while (0)
 #define glTexGenfv(x, y, z) do {} while (0)
 #define glShadeModel(x) do {} while (0)
 
-// some missing constants
-
-/* base */
+/* Missing VitaGL constants used by 2.6.66 code paths. */
 #define GL_POLYGON_SMOOTH   0x0B41
 #define GL_PACK_ALIGNMENT   0x0D05
 #define GL_UNPACK_ALIGNMENT 0x0CF5
@@ -100,21 +93,11 @@ typedef GLboolean (*PFNGLUNMAPBUFFERARBPROC) (GLenum target);
 #define GL_RGBA4            0x8056
 #define GL_RGB5_A1          0x8057
 #define GL_RGBA8            0x8058
-
-/* GL_NV_depth_clamp */
 #define GL_DEPTH_CLAMP_NV   0x864F
-
-/* GL_EXT_texture_compression_s3tc */
 #define GL_COMPRESSED_RGBA_S3TC_DXT3_EXT  0x83F2
-
-/* GL_EXT_texture_filter_anisotropic */
 #define GL_TEXTURE_MAX_ANISOTROPY_EXT     0x84FE
 #define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT 0x84FF
-
-/* GL_EXT_shared_texture_palette */
 #define GL_SHARED_TEXTURE_PALETTE_EXT 0x81FB
-
-/* GL_EXT_texture_env_combine */
 #define GL_COMBINE        0x8570
 #define GL_COMBINE_RGB    0x8571
 #define GL_COMBINE_ALPHA  0x8572
@@ -136,24 +119,19 @@ typedef GLboolean (*PFNGLUNMAPBUFFERARBPROC) (GLenum target);
 #define GL_OPERAND0_ALPHA 0x8598
 #define GL_OPERAND1_ALPHA 0x8599
 #define GL_OPERAND2_ALPHA 0x859A
-
-/* GL_ARB_multisample */
 #define GL_MULTISAMPLE_ARB 0x809D
-
-/* GL_EXT_texture_env_dot3 */
 #define GL_DOT3_RGB       0x8740
 #define GL_DOT3_RGBA      0x8741
-
-/* some ARB postfixed stuff */
 #define GL_STATIC_DRAW_ARB GL_STATIC_DRAW
 #define GL_TEXTURE0_ARB    GL_TEXTURE0
 #define GL_TEXTURE1_ARB    GL_TEXTURE1
 #define GL_TEXTURE31_ARB   GL_TEXTURE31
+#define GL_CURRENT_COLOR   0x0B00
+#define GL_QUAD_STRIP      0x0008
 
 #define R_GL_MIPMAP_LINEAR_FILTER GL_LINEAR
 
-#else // __vita__
-
+#else
 #include <SDL_opengl.h>
 
 #if SDL_VERSION_ATLEAST(1, 3, 0)
@@ -167,10 +145,8 @@ typedef GLboolean (*PFNGLUNMAPBUFFERARBPROC) (GLenum target);
 #include <GL/gl.h>	/* Header File For The OpenGL Library */
 #include <GL/glu.h>	/* Header File For The GLU Library */
 #endif
+
 #endif
-
-#define R_GL_MIPMAP_LINEAR_FILTER GL_LINEAR_MIPMAP_LINEAR
-
 #endif // __vita__
 
 #include "doomtype.h"
@@ -291,13 +267,14 @@ void gld_EnableTexture2D(GLenum texture, int enable);
 void gld_EnableClientCoordArray(GLenum texture, int enable);
 void gld_EnableMultisample(int enable);
 
-// wrappers
+#ifdef __vita__
 void gld_glVertexPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer);
 void gld_glColorPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer);
 void gld_glTexCoordPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer);
 void gld_glEnableClientState(GLenum array);
 void gld_glDisableClientState(GLenum array);
 void gld_glDrawArrays(GLenum mode, GLint first, GLsizei count);
+#endif
 
 typedef enum
 {

@@ -51,27 +51,38 @@ static int CheckForProfile(int g)
     return fexists(buf);
 }
 
-const char *FS_GetBaseDir(void)
+static const char *FindVitaDataDir(void)
 {
+    static char base[MAX_FNAME];
     const char *drives[] = { "uma0", "imc0", "ux0" };
-    const char *path = "/data/prboom";
 
-    if (fs_base_dir[0] == 0)
+    if (base[0]) return base;
+
+    /* Prefer a complete data directory so a partial uma0 installation does
+       not hide a valid installation on another Vita storage device. */
+    for (unsigned int i = 0; i < sizeof(drives) / sizeof(*drives); ++i)
     {
-        // check if a prboom folder exists on one of the drives
-        // default to the last one (ux0)
-        for (unsigned int i = 0; i < sizeof(drives) / sizeof(*drives); ++i)
-        {
-          snprintf(fs_base_dir, sizeof(fs_base_dir), "%s:%s", drives[i], path);
-          DIR *dir = opendir(fs_base_dir);
-          if (dir)
-          {
-            closedir(dir);
-            break;
-          }
-        }
+        char wad[MAX_FNAME];
+        snprintf(base, sizeof(base), "%s:/data/prboom", drives[i]);
+        snprintf(wad, sizeof(wad), "%s/prboom-plus.wad", base);
+        if (fexists(wad)) return base;
     }
 
+    /* Keep the original behavior before data.zip has been installed. */
+    for (unsigned int i = 0; i < sizeof(drives) / sizeof(*drives); ++i)
+    {
+        snprintf(base, sizeof(base), "%s:/data/prboom", drives[i]);
+        if (isdir(base)) return base;
+    }
+
+    snprintf(base, sizeof(base), "ux0:/data/prboom");
+    return base;
+}
+
+const char *FS_GetBaseDir(void)
+{
+    if (fs_base_dir[0] == 0)
+        snprintf(fs_base_dir, sizeof(fs_base_dir), "%s", FindVitaDataDir());
     return fs_base_dir;
 }
 
@@ -98,6 +109,9 @@ int FS_Init(void)
         fs_profiles[i].monsters[0] = '0';
         fs_profiles[i].skill[0] = '0';
         fs_profiles[i].complevel = -1;
+        /* Keep diagnostics enabled for every profile. This is deliberately
+         * not loaded from or saved to the profile file. */
+        fs_profiles[i].logfile = 1;
         snprintf(fs_profiles[i].joinaddr, MAX_FNAME, "%s:5030", net_my_ip);
         numgames += present;
     }
@@ -375,8 +389,8 @@ static void WriteResponseFile(int profile, const char *fname)
     else if (g->demo[0])
         fprintf(f, "-playdemo %s\n", g->demo);
 
-    if (g->logfile)
-        fprintf(f, "-logfile\n");
+    /* Always keep the Vita launcher diagnostics enabled. */
+    fprintf(f, "-logfile\n");
 
     fclose(f);
 }
@@ -407,6 +421,34 @@ void FS_ExecGame(int profile)
     argv[1] = rsp;
     argv[2] = NULL;
 
-    I_Cleanup();
-    sceAppMgrLoadExec(exe, argv, NULL);
+    printf("FS_ExecGame: launching %s with %s\n", exe, rsp);
+    fflush(stdout);
+    /* The process is replaced on success. Freeing vita2d/GXM immediately
+       before LoadExec makes current Vita3K dereference destroyed renderer
+       state, and is unnecessary on hardware as well. */
+    printf("FS_ExecGame: calling sceAppMgrLoadExec\n");
+    fflush(stdout);
+
+    /* A successful LoadExec schedules replacement of this process.  Do not
+       call sceKernelExitProcess() after it: Vita3K uses the pending
+       LoadExec request when it handles the process exit, and a second plain
+       exit would discard the requested target and close the launcher only. */
+    int rc = sceAppMgrLoadExec(exe, argv, NULL);
+    printf("FS_ExecGame: sceAppMgrLoadExec returned 0x%08X\n", rc);
+    fflush(stdout);
+
+    {
+        char fname[MAX_FNAME];
+        FILE *ferr;
+
+        snprintf(fname, sizeof(fname), "%s/error.log", FS_GetBaseDir());
+        ferr = fopen(fname, "w");
+        if (ferr)
+        {
+            fprintf(ferr, "sceAppMgrLoadExec() returned 0x%08X\n", rc);
+            fclose(ferr);
+        }
+    }
+    /* On hardware LoadExec does not return.  Vita3K returns after queuing the
+       relaunch, so returning here preserves that pending request. */
 }

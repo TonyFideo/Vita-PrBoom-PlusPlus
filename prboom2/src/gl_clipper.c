@@ -69,9 +69,9 @@
 */
 
 #ifdef __vita__
-# include <vitaGL.h>
+#include <vitaGL.h>
 #else
-# include <SDL_opengl.h>
+#include <SDL_opengl.h>
 #endif
 #include <math.h>
 #include "v_video.h"
@@ -349,7 +349,7 @@ angle_t gld_FrustumAngle(void)
   }
 
   // If the pitch is larger than this you can look all around at a FOV of 90
-  if (D_abs(viewpitch) > 46 * ANG1)
+  if (D_abs((int) viewpitch) > 46 * ANG1)
     return 0xffffffff;
 
   // ok, this is a gross hack that barely works...

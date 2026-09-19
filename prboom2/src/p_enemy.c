@@ -360,6 +360,8 @@ static dboolean P_Move(mobj_t *actor, dboolean dropoff) /* killough 9/12/98 */
 
   if (try_ok && friction > ORIG_FRICTION)
     {
+      // COMPAT: MBF calls P_UnsetThingPosition()/P_SetThingPosition() and
+      //         restores floorz, ceilingz and dropoffz values as well
       actor->x = origx;
       actor->y = origy;
       movefactor *= FRACUNIT / ORIG_FRICTION_FACTOR / 4;
@@ -1100,7 +1102,12 @@ void A_Look(mobj_t *actor)
       if (actor->type==MT_SPIDER || actor->type == MT_CYBORG)
         S_StartSound(NULL, sound);          // full volume
       else
+      {
         S_StartSound(actor, sound);
+       // [FG] make seesounds uninterruptible
+        if (full_sounds)
+          S_UnlinkSound(actor);
+      }
     }
   P_SetMobjState(actor, actor->info->seestate);
 }

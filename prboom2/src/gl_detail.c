@@ -43,6 +43,9 @@
 #ifdef HAVE_LIBSDL2_IMAGE
 #include <SDL_image.h>
 #endif
+#ifdef __vita__
+#include "SDL/i_image.h"
+#endif
 
 #include <math.h>
 
@@ -55,6 +58,7 @@
 #include "m_misc.h"
 #include "sc_man.h"
 #include "e6y.h"
+#include "i_system.h"
 
 int render_usedetail;
 int gl_allow_detail_textures;
@@ -145,7 +149,7 @@ void gld_InitDetail(void)
 {
   gl_detail_maxdist_sqrt = (float)sqrt((float)gl_detail_maxdist);
 
-  atexit(gld_ShutdownDetail);
+  I_AtExit(gld_ShutdownDetail, true);
   M_ChangeUseDetail();
 }
 
@@ -208,12 +212,20 @@ void gld_PreprocessDetail(void)
   {
     GLEXT_glClientActiveTextureARB(GL_TEXTURE0_ARB);
 #if defined(USE_VERTEX_ARRAYS) || defined(USE_VBO)
+#ifdef __vita__
     gld_glTexCoordPointer(2, GL_FLOAT, sizeof(flats_vbo[0]), flats_vbo_u);
+#else
+    glTexCoordPointer(2, GL_FLOAT, sizeof(flats_vbo[0]), flats_vbo_u);
+#endif
 #endif
 
     GLEXT_glClientActiveTextureARB(GL_TEXTURE1_ARB);
 #if defined(USE_VERTEX_ARRAYS) || defined(USE_VBO)
+#ifdef __vita__
     gld_glTexCoordPointer(2, GL_FLOAT, sizeof(flats_vbo[0]), flats_vbo_u);
+#else
+    glTexCoordPointer(2, GL_FLOAT, sizeof(flats_vbo[0]), flats_vbo_u);
+#endif
 #endif
     GLEXT_glClientActiveTextureARB(GL_TEXTURE0_ARB);
 
@@ -434,7 +446,11 @@ void gld_DrawFlatDetail_NoARB(GLFlat *flat)
       for (loopnum=0; loopnum<sectorloops[flat->sectornum].loopcount; loopnum++)
       {
         currentloop=&sectorloops[flat->sectornum].loops[loopnum];
+#ifdef __vita__
         gld_glDrawArrays(currentloop->mode,currentloop->vertexindex,currentloop->vertexcount);
+#else
+        glDrawArrays(currentloop->mode,currentloop->vertexindex,currentloop->vertexcount);
+#endif
       }
     }
 #else
@@ -707,7 +723,11 @@ GLuint gld_LoadDetailName(const char *name)
     SDL_Surface *surf_raw;
     
 #ifdef HAVE_LIBSDL2_IMAGE
+#ifdef __vita__
+    surf_raw = I_LoadImageRW(SDL_RWFromConstMem(W_CacheLumpNum(lump), W_LumpLength(lump)), 1);
+#else
     surf_raw = IMG_Load_RW(SDL_RWFromConstMem(W_CacheLumpNum(lump), W_LumpLength(lump)), 1);
+#endif
 #else
     surf_raw = SDL_LoadBMP_RW(SDL_RWFromConstMem(W_CacheLumpNum(lump), W_LumpLength(lump)), 1);
 #endif
@@ -731,8 +751,8 @@ GLuint gld_LoadDetailName(const char *name)
 
 #ifdef USE_GLU_MIPMAP
         gluBuild2DMipmaps(GL_TEXTURE_2D, gl_tex_format,
-          surf->w, surf->h, 
-          imageformats[surf->format->BytesPerPixel], 
+          surf->w, surf->h,
+          imageformats[surf->format->BytesPerPixel],
           GL_UNSIGNED_BYTE, surf->pixels);
 #else
         glTexImage2D(GL_TEXTURE_2D, 0, gl_tex_format, surf->w, surf->h,
@@ -743,7 +763,7 @@ GLuint gld_LoadDetailName(const char *name)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);	
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, R_GL_MIPMAP_LINEAR_FILTER);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
         if (gl_ext_texture_filter_anisotropic)
           glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, (GLfloat)(1<<gl_texture_filter_anisotropic));
 

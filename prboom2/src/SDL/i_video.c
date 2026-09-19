@@ -115,9 +115,12 @@ int gl_depthbuffer_bits=16;
 extern void M_QuitDOOM(int choice);
 int use_fullscreen;
 int desired_fullscreen;
+int exclusive_fullscreen;
 int render_vsync;
 int screen_multiply;
 int render_screen_multiply;
+int integer_scaling;
+int vanilla_keymap;
 SDL_Surface *screen;
 SDL_Surface *surface;
 SDL_Surface *buffer;
@@ -328,7 +331,7 @@ while (SDL_PollEvent(Event))
   case SDL_MOUSEMOTION:
     if (mouse_enabled && window_focused)
     {
-      event.type = ev_mouse;
+      event.type = ev_mousemotion;
       event.data1 = 0; // fgs: mouse buttons now virtual keys
       event.data2 = Event->motion.xrel << 4;
       event.data3 = -Event->motion.yrel << 4;
@@ -596,8 +599,46 @@ void I_StopRendering(int wait)
 static int newpal = 0;
 #define NO_PALETTE_CHANGE 1000
 
+// Vita diagnostic overlay: count display updates instead of game tics, so
+// this reports the frame cadence seen by the renderer.
+static int display_fps;
+static unsigned int display_fps_frames;
+static Uint32 display_fps_last_update;
+
+int I_GetFPS(void)
+{
+  return display_fps;
+}
+
+static void I_UpdateFPS(void)
+{
+  Uint32 now = SDL_GetTicks();
+
+  display_fps_frames++;
+
+  if (!display_fps_last_update)
+  {
+    display_fps_last_update = now;
+    return;
+  }
+
+  if (now - display_fps_last_update >= 500)
+  {
+    Uint32 elapsed = now - display_fps_last_update;
+
+    display_fps = (int)((display_fps_frames * 1000 + elapsed / 2) / elapsed);
+    if (display_fps > 999)
+      display_fps = 999;
+
+    display_fps_frames = 0;
+    display_fps_last_update = now;
+  }
+}
+
 void I_FinishUpdate (void)
 {
+  I_UpdateFPS();
+
   //e6y: new mouse code
   UpdateGrab();
 
@@ -1484,7 +1525,7 @@ void I_UpdateVideoMode(void)
     sw_texptr = vglGetTexDataPointer(GL_TEXTURE_2D);
 
     // make buffer point to the actual texture data to avoid extra memcpying
-    if (buffer->pixels) SDL_free(buffer->pixels);
+    if (buffer->pixels) SDL_SIMDFree(buffer->pixels);
     buffer->flags |= SDL_PREALLOC;
     buffer->pixels = sw_texptr;
 #else

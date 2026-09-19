@@ -47,6 +47,7 @@ int SCREENWIDTH=320;
 int SCREENHEIGHT=200;
 int SCREENPITCH=320;
 
+// e6y: actual framebuffer dimensions after screen scaling
 int REAL_SCREENWIDTH;
 int REAL_SCREENHEIGHT;
 int REAL_SCREENPITCH;

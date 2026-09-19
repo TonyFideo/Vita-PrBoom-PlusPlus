@@ -121,6 +121,7 @@ extern int SCREENHEIGHT;
 // end of the line caused by hardware considerations
 extern int SCREENPITCH;
 
+// e6y: actual framebuffer dimensions after screen scaling
 extern int REAL_SCREENWIDTH;
 extern int REAL_SCREENHEIGHT;
 extern int REAL_SCREENPITCH;
@@ -292,7 +293,7 @@ typedef enum {
 // cph - Add the numeric keypad keys, as suggested by krose 4/22/99:
 // The way numbers are assigned to keys is a mess, but it's too late to
 // change that easily. At least these additions are don neatly.
-// Codes 0x100-0x120 are reserved for number pad
+// Codes 0x100-0x200 are reserved for number pad
 
 #define KEYD_KEYPAD0      (0x100 + '0')
 #define KEYD_KEYPAD1      (0x100 + '1')

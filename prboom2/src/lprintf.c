@@ -55,24 +55,19 @@
 #include "e6y.h"//e6y
 #include "i_capture.h"
 
-#ifdef __vita__
-#define LOGFILE "ux0:/data/prboom/log.log"
-#else
+#ifndef __vita__
 #define LOGFILE "log.log"
 #endif
 
 int cons_error_mask = -1-LO_INFO; /* all but LO_INFO when redir'd */
 int cons_output_mask = -1;        /* all output enabled */
-int log_to_file = 0;
-
-static FILE *flog = NULL;
 
 /* cphipps - enlarged message buffer and made non-static
  * We still have to be careful here, this function can be called after exit
  */
 #define MAX_MESSAGE_SIZE 2048
 
-int lprintf(/*OutputLevels*/ int pri, const char *s, ...)
+int lprintf(OutputLevels pri, const char *s, ...)
 {
   int r=0;
   char msg[MAX_MESSAGE_SIZE];
@@ -83,15 +78,30 @@ int lprintf(/*OutputLevels*/ int pri, const char *s, ...)
   doom_vsnprintf(msg,sizeof(msg),s,v);    /* print message in buffer  */
   va_end(v);
 
-  if (log_to_file)
+#ifdef __vita__
+  /* The launcher puts -logfile in a response file, which is expanded after
+   * the first startup messages have already passed through lprintf().  Check
+   * lazily so logging starts as soon as that response file is available.
+   * Use the selected Vita data root instead of assuming ux0. */
   {
-    flog = fopen(LOGFILE, flog ? "a" : "w");
-    if (flog)
+    static dboolean log_started = false;
+
+    if (log_started || M_CheckParm("-logfile"))
     {
-      fprintf(flog, "%s", msg);
-      fclose(flog);
+      char path[96];
+      FILE *flog;
+
+      snprintf(path, sizeof(path), "%s/log.log", I_DoomExeDir());
+      flog = fopen(path, log_started ? "a" : "w");
+      if (flog)
+      {
+        fputs(msg, flog);
+        fclose(flog);
+        log_started = true;
+      }
     }
   }
+#endif
 
   if (lvl&cons_output_mask)               /* mask output as specified */
   {

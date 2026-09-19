@@ -95,10 +95,12 @@ typedef struct
 // Stores things/mobjs.
 //
 
-#define NO_TOPTEXTURES        0x00000001
-#define NO_BOTTOMTEXTURES     0x00000002
-#define SECTOR_IS_CLOSED      0x00000004
-#define NULL_SECTOR           0x00000008
+#define NO_TOPTEXTURES             0x00000001
+#define NO_BOTTOMTEXTURES          0x00000002
+#define SECTOR_IS_CLOSED           0x00000004
+#define NULL_SECTOR                0x00000008
+#define MISSING_TOPTEXTURES        0x00000010
+#define MISSING_BOTTOMTEXTURES     0x00000020
 
 typedef struct
 {
@@ -401,6 +403,9 @@ typedef struct vissprite_s
 
   // killough 3/27/98: height sector for underwater/fake ceiling support
   int heightsec;
+
+  // [FG] colored blood and gibs
+  int color;
 } vissprite_t;
 
 //

@@ -1,4 +1,0 @@
-[submodule "prboom2/vita/vitaGL"]
-	path = prboom2/vita/vitaGL
-	url = https://github.com/fgsfdsfgs/vitaGL.git
-	branch = texture_matrix

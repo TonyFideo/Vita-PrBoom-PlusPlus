@@ -1552,7 +1552,7 @@ static void P_LoadLineDefs (int lump)
         if ((ld->sidenum[1] == NO_INDEX) && (ld->flags & ML_TWOSIDED)) {
           // e6y
           // ML_TWOSIDED flag shouldn't be cleared for compatibility purposes
-          // see CLNJ-506.LMP at http://doomedsda.us/wad1005.html
+          // see CLNJ-506.LMP at https://dsdarchive.com/wads/challenj
           MissedBackSideOverrun(ld);
           if (!demo_compatibility || !EMULATE(OVERFLOW_MISSEDBACKSIDE))
           {
@@ -2084,6 +2084,7 @@ static void P_LoadBlockMap (int lump)
   long count;
 
   if (M_CheckParm("-blockmap") || W_LumpLength(lump)<8 || (count = W_LumpLength(lump)/2) >= 0x10000) //e6y
+    // COMPAT: MBF uses a different algorithm in P_CreateBlockMap()
     P_CreateBlockMap();
   else
     {
@@ -2249,7 +2250,7 @@ static int P_GroupLines (void)
     sector->bbox[3] = sector->blockbox[3] >> FRACTOMAPBITS;
 
     // set the degenmobj_t to the middle of the bounding box
-    if (comp[comp_sound])
+    if (default_comp[comp_sound])
     {
       sector->soundorg.x = (bbox[BOXRIGHT]+bbox[BOXLEFT])/2;
       sector->soundorg.y = (bbox[BOXTOP]+bbox[BOXBOTTOM])/2;
@@ -2593,6 +2594,9 @@ void P_InitSubsectorsLines(void)
 //
 // killough 5/3/98: reformatted, cleaned up
 
+// [FG] current map lump number
+int maplumpnum = -1;
+
 void P_SetupLevel(int episode, int map, int playermask, skill_t skill)
 {
   int   i;
@@ -2637,13 +2641,13 @@ void P_SetupLevel(int episode, int map, int playermask, skill_t skill)
   // find map name
   if (gamemode == commercial)
   {
-    sprintf(lumpname, "map%02d", map);           // killough 1/24/98: simplify
-    sprintf(gl_lumpname, "gl_map%02d", map);    // figgi
+    snprintf(lumpname, sizeof(lumpname), "map%02d", map);           // killough 1/24/98: simplify
+    snprintf(gl_lumpname, sizeof(gl_lumpname), "gl_map%02d", map);    // figgi
   }
   else
   {
-    sprintf(lumpname, "E%dM%d", episode, map);   // killough 1/24/98: simplify
-    sprintf(gl_lumpname, "GL_E%iM%i", episode, map); // figgi
+    snprintf(lumpname, sizeof(lumpname), "E%dM%d", episode, map);   // killough 1/24/98: simplify
+    snprintf(gl_lumpname, sizeof(gl_lumpname), "GL_E%iM%i", episode, map); // figgi
   }
 
   lumpnum = W_GetNumForName(lumpname);
@@ -2829,6 +2833,9 @@ void P_SetupLevel(int episode, int map, int playermask, skill_t skill)
   // preload graphics
   if (precache)
     R_PrecacheLevel();
+
+  // [FG] current map lump number
+  maplumpnum = lumpnum;
 
 #ifdef GL_DOOM
   if (V_GetMode() == VID_MODEGL)

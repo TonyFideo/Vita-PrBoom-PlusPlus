@@ -64,6 +64,8 @@ extern GameMode_t gamemode;
 extern GameMission_t  gamemission;
 extern const char *doomverstr;
 
+extern char *MAPNAME(int e, int m);
+
 // Set if homebrew PWAD stuff has been added.
 extern  dboolean modifiedgame;
 
@@ -107,7 +109,7 @@ enum {
   comp_infcheat,
   comp_zerotags,
   comp_moveblock,
-  comp_respawn,  /* cph - this is the inverse of comp_respawnfix from eternity */
+  comp_respawn,  /* cph - alias of comp_respawnfix from eternity */
   comp_sound,
   comp_666,
   comp_soul,
@@ -136,6 +138,9 @@ enum {
 extern int comp[COMP_TOTAL], default_comp[COMP_TOTAL];
 extern int /*comperr[COMPERR_NUM], */default_comperr[COMPERR_NUM];
 
+// [FG] allow MBF sky transfers in all complevels
+extern int comp_skytransfers;
+
 // -------------------------------------------
 // Language.
 extern  Language_t   language;
@@ -156,6 +161,7 @@ extern  skill_t         gameskill;
 extern  int   gameepisode;
 extern  int   gamemap;
 extern struct MapEntry *gamemapinfo;
+extern int maplumpnum;
 
 // Nightmare mode flag, single player.
 extern  dboolean         respawnmonsters;
@@ -166,6 +172,8 @@ extern  dboolean netgame;
 // Flag: true only if started as net deathmatch.
 // An enum might handle altdeath/cooperative better.
 extern  dboolean deathmatch;
+
+extern dboolean coop_spawns;
 
 // ------------------------------------------
 // Internal parameters for sound rendering.
@@ -295,8 +303,6 @@ extern  gamestate_t     wipegamestate;
 extern  int             mouseSensitivity_horiz; // killough
 extern  int             mouseSensitivity_vert;
 
-extern  int             mouse_novert;
-
 // debug flag to cancel adaptiveness
 extern  dboolean         singletics;
 
@@ -351,8 +357,6 @@ extern int monster_friction, default_monster_friction;
 extern int help_friends, default_help_friends;
 
 extern int flashing_hom; // killough 10/98
-
-extern int doom_weapon_toggles;   // killough 10/98
 
 /* killough 7/19/98: whether monsters should fight against each other */
 extern int monster_infighting, default_monster_infighting;

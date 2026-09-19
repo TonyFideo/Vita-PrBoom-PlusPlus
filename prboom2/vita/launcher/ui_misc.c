@@ -69,7 +69,10 @@ void UI_MenuMisc_Init(void)
 
 void UI_MenuMisc_Update(void)
 {
-
+    /* Keep the visible setting enabled even if the generic boolean handler
+     * receives an input event for it. */
+    misc_opts[5].boolean = 1;
+    fs_profiles[ui_profile].logfile = 1;
 }
 
 void UI_MenuMisc_Draw(void)
@@ -79,6 +82,9 @@ void UI_MenuMisc_Draw(void)
 
 void UI_MenuMisc_Reload(void)
 {
+    /* The launcher must always pass -logfile to the game. */
+    fs_profiles[ui_profile].logfile = 1;
+
     misc_opts[0].codevar = fs_profiles[ui_profile].monsters;
     misc_opts[1].codevar = &fs_profiles[ui_profile].record;
     misc_opts[2].codevar = &fs_profiles[ui_profile].skill;

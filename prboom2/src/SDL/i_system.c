@@ -74,7 +74,7 @@
 
 #ifdef __vita__
 #include <vitaGL/source/vitaGL.h>
-#include <psp2/io/stat.h> 
+#include <psp2/io/stat.h>
 #include <dirent.h>
 SceUInt32 sceUserMainThreadStackSize = 1 * 1024 * 1024;
 unsigned int _newlib_heap_size_user = 128 * 1024 * 1024;
@@ -105,33 +105,14 @@ unsigned int _newlib_heap_size_user = 128 * 1024 * 1024;
 
 #include "z_zone.h"
 
+#include "m_io.h"
+
 void I_uSleep(unsigned long usecs)
 {
     SDL_Delay(usecs/1000);
 }
 
-int ms_to_next_tick;
-
-static int basetime = 0;
-int I_GetTime_RealTime (void)
-{
-  int i;
-  int t = SDL_GetTicks();
-  
-  //e6y: removing startup delay
-  if (basetime == 0)
-    basetime = t;
-  t -= basetime;
-
-  i = t*(TICRATE/5)/200;
-  ms_to_next_tick = (i+1)*200/(TICRATE/5) - t;
-  if (ms_to_next_tick > 1000/TICRATE || ms_to_next_tick<1) ms_to_next_tick = 1;
-  return i;
-}
-
 #ifndef PRBOOM_SERVER
-static unsigned int start_displaytime;
-static unsigned int displaytime;
 static dboolean InDisplay = false;
 static int saved_gametic = -1;
 dboolean realframe = false;
@@ -146,61 +127,29 @@ dboolean I_StartDisplay(void)
   if (realframe)
     saved_gametic = gametic;
 
-  start_displaytime = SDL_GetTicks();
   InDisplay = true;
   return true;
 }
 
 void I_EndDisplay(void)
 {
-  displaytime = SDL_GetTicks() - start_displaytime;
   InDisplay = false;
 }
 
-static int subframe = 0;
-static int prevsubframe = 0;
-int interpolation_method;
 fixed_t I_GetTimeFrac (void)
 {
-  unsigned long now;
   fixed_t frac;
 
-  now = SDL_GetTicks();
-
-  subframe++;
-
-  if (tic_vars.step == 0)
+  if (!movement_smooth)
   {
     frac = FRACUNIT;
   }
   else
   {
-    extern int renderer_fps;
-    if ((interpolation_method == 0) || (prevsubframe <= 0) || (renderer_fps <= 0))
-    {
-      frac = (fixed_t)((now - tic_vars.start + displaytime) * FRACUNIT / tic_vars.step);
-    }
-    else
-    {
-      frac = (fixed_t)((now - tic_vars.start) * FRACUNIT / tic_vars.step);
-      frac = (unsigned int)((float)FRACUNIT * TICRATE * subframe / renderer_fps);
-    }
-    frac = BETWEEN(0, FRACUNIT, frac);
+    frac = I_TickElapsedTime();
   }
 
   return frac;
-}
-
-void I_GetTime_SaveMS(void)
-{
-  if (!movement_smooth)
-    return;
-
-  tic_vars.start = SDL_GetTicks();
-  tic_vars.next = (unsigned int) ((tic_vars.start * tic_vars.msec + 1.0f) / tic_vars.msec);
-  tic_vars.step = tic_vars.next - tic_vars.start;
-  prevsubframe = subframe;
-  subframe = 0;
 }
 #endif
 
@@ -219,7 +168,7 @@ unsigned long I_GetRandomTimeSeed(void)
  */
 const char* I_GetVersionString(char* buf, size_t sz)
 {
-  snprintf(buf,sz,"%s v%s (http://prboom-plus.sourceforge.net/)",PACKAGE_NAME,PACKAGE_VERSION);
+  snprintf(buf,sz,"%s v%s (%s)",PACKAGE_NAME,PACKAGE_VERSION,PACKAGE_HOMEPAGE);
   return buf;
 }
 
@@ -246,7 +195,7 @@ dboolean I_FileToBuffer(const char *filename, byte **data, int *size)
   byte *buffer = NULL;
   size_t filesize = 0;
 
-  hfile = fopen(filename, "rb");
+  hfile = M_fopen(filename, "rb");
   if (hfile)
   {
     fseek(hfile, 0, SEEK_END);
@@ -358,11 +307,11 @@ const char *I_DoomExeDir(void)
         *p--=0;
       if (*p=='/' || *p=='\\')
         *p--=0;
-      if (strlen(base)<2)
+      if (strlen(base)<2 || M_access(base, W_OK) != 0)
       {
         free(base);
         base = (char*)malloc(1024);
-        if (!getcwd(base,1024))
+        if (!M_getcwd(base,1024) || M_access(base, W_OK) != 0)
           strcpy(base, current_dir_dummy);
       }
     }
@@ -399,32 +348,76 @@ const char* I_GetTempDir(void)
 
 #elif defined(__vita__)
 
-const char *I_DoomExeDir(void)
+static const char *VitaDataDir(void)
 {
   static char base[32];
+  const char *drives[] = { "uma0", "imc0", "ux0" };
+  unsigned int i;
 
-  if (!base[0])
+  if (base[0])
+    return base;
+
+  /* Prefer a complete data directory. A stale/partial directory on an
+   * earlier drive must not hide the WAD on a later drive. */
+  for (i = 0; i < sizeof(drives) / sizeof(*drives); ++i)
   {
-    const char *drives[] = { "uma0", "imc0", "ux0" };
-    const char *path = "/data/prboom";
-    unsigned int i;
+    char wad[64];
+
+    snprintf(base, sizeof(base), "%s:/data/prboom", drives[i]);
+    snprintf(wad, sizeof(wad), "%s/prboom-plus.wad", base);
+    if (!M_access(wad, F_OK))
+      return base;
+  }
+
+  /* Preserve the original fallback when the required WAD is not installed
+   * yet: use the first existing directory, otherwise default to ux0. */
+  for (i = 0; i < sizeof(drives) / sizeof(*drives); ++i)
+  {
     DIR *dir;
 
-    // check if a prboom folder exists on one of the drives
-    // default to the last one (ux0)
-    for (i = 0; i < sizeof(drives) / sizeof(*drives); ++i)
+    snprintf(base, sizeof(base), "%s:/data/prboom", drives[i]);
+    dir = opendir(base);
+    if (dir)
     {
-      snprintf(base, sizeof(base), "%s:%s", drives[i], path);
-      dir = opendir(base);
-      if (dir)
-      {
-        closedir(dir);
-        break;
-      }
+      closedir(dir);
+      break;
     }
   }
 
   return base;
+}
+
+void I_VitaTraceReset(void)
+{
+  char path[96];
+  FILE *trace;
+
+  snprintf(path, sizeof(path), "%s/startup.log", VitaDataDir());
+  trace = fopen(path, "w");
+  if (trace)
+  {
+    fputs("PrBoom-Plus Vita startup trace\n", trace);
+    fclose(trace);
+  }
+}
+
+void I_VitaTrace(const char *message)
+{
+  char path[96];
+  FILE *trace;
+
+  snprintf(path, sizeof(path), "%s/startup.log", VitaDataDir());
+  trace = fopen(path, "a");
+  if (trace)
+  {
+    fprintf(trace, "%s\n", message);
+    fclose(trace);
+  }
+}
+
+const char *I_DoomExeDir(void)
+{
+  return VitaDataDir();
 }
 
 const char *I_GetTempDir(void)
@@ -437,7 +430,6 @@ const char *I_GetTempDir(void)
     DIR *dir;
     snprintf(base, sizeof(base), "%s/tmp", basedir);
     dir = opendir(base);
-    // create it if it doesn't exist
     if (!dir)
       sceIoMkdir(base, 0755);
     else
@@ -451,22 +443,42 @@ const char *I_GetTempDir(void)
 // cph - V.Aguilar (5/30/99) suggested return ~/.lxdoom/, creating
 //  if non-existant
 // cph 2006/07/23 - give prboom+ its own dir
-static const char prboom_dir[] = {"/.prboom-plus"}; // Mead rem extra slash 8/21/03
+static const char prboom_dir[] = {"prboom-plus"};
 
 const char *I_DoomExeDir(void)
 {
   static char *base;
+  struct stat data_dir;
+
   if (!base)        // cache multiple requests
     {
-      char *home = getenv("HOME");
+      char *home = M_getenv("HOME");
+      char *p_home = strdup(home);
       size_t len = strlen(home);
+      size_t p_len = (len + strlen(prboom_dir) + 3);
 
-      base = malloc(len + strlen(prboom_dir) + 1);
-      strcpy(base, home);
       // I've had trouble with trailing slashes before...
-      if (base[len-1] == '/') base[len-1] = 0;
-      strcat(base, prboom_dir);
-      mkdir(base, S_IRUSR | S_IWUSR | S_IXUSR); // Make sure it exists
+      if (p_home[len-1] == '/') p_home[len-1] = 0;
+
+      base = malloc(p_len);
+      snprintf(base, p_len, "%s/.%s", p_home, prboom_dir);
+      free(p_home);
+
+      // if ~/.$prboom_dir doesn't exist,
+      // create and use directory in XDG_DATA_HOME
+      if (M_stat(base, &data_dir) || !S_ISDIR(data_dir.st_mode))
+        {
+          // SDL creates this directory if it doesn't exist
+          char *prefpath = SDL_GetPrefPath("", prboom_dir);
+          size_t prefsize = strlen(prefpath);
+
+          free(base);
+          base = strdup(prefpath);
+          // SDL_GetPrefPath always returns with trailing slash
+          if (base[prefsize-1] == '/') base[prefsize-1] = 0;
+          SDL_free(prefpath);
+        }
+//    mkdir(base, S_IRUSR | S_IWUSR | S_IXUSR);
     }
   return base;
 }
@@ -530,6 +542,7 @@ char* I_FindFileInternal(const char* wfname, const char* ext, dboolean isStatic)
     {NULL, "pwads", NULL, I_DoomExeDir},
 #endif
     {NULL}, // current working directory
+    {PRBOOMDATADIR}, // supplemental data directory
     {NULL, NULL, "DOOMWADDIR"}, // run-time $DOOMWADDIR
     {DOOMWADDIR}, // build-time configured DOOMWADDIR
     {NULL, "doom", "HOME"}, // ~/doom
@@ -561,7 +574,7 @@ char* I_FindFileInternal(const char* wfname, const char* ext, dboolean isStatic)
     memcpy(search, search0, num_search * sizeof(*search));
 
     // add each directory from the $DOOMWADPATH environment variable
-    if ((dwp = getenv("DOOMWADPATH")))
+    if ((dwp = M_getenv("DOOMWADPATH")))
     {
       char *left, *ptr, *dup_dwp;
 
@@ -607,7 +620,7 @@ char* I_FindFileInternal(const char* wfname, const char* ext, dboolean isStatic)
      * and optionally s to a subdirectory of d */
     // switch replaced with lookup table
     if (search[i].env) {
-      if (!(d = getenv(search[i].env)))
+      if (!(d = M_getenv(search[i].env)))
         continue;
     } else if (search[i].func)
       d = search[i].func();
@@ -621,9 +634,9 @@ char* I_FindFileInternal(const char* wfname, const char* ext, dboolean isStatic)
                              s ? s : "", (s && !HasTrailingSlash(s)) ? "/" : "",
                              wfname);
 
-    if (ext && access(p,F_OK))
+    if (ext && M_access(p,F_OK))
       strcat(p, ext);
-    if (!access(p,F_OK)) {
+    if (!M_access(p,F_OK)) {
       if (!isStatic)
         lprintf(LO_INFO, " found %s\n", p);
       return p;

@@ -127,9 +127,17 @@ float gl_sprite_offset;       // precalcilated float value for gl_sprite_offset_
 int gl_sprite_blend;  // e6y: smooth sprite edges
 int gl_mask_sprite_threshold;
 float gl_mask_sprite_threshold_f;
+/* Note: These must be identically-indexed,
+ * including the spritefuzzmode enum */
+spritefuzzmode_t gl_thingspritefuzzmode;
+spritefuzzmode_t gl_weaponspritefuzzmode;
+const char *gl_spritefuzzmodes[] = {"darken", "shadow", "transparent", "ghostly"};
+GLenum gl_fuzzsfactors[] = {GL_DST_COLOR, GL_ZERO, GL_ONE, GL_SRC_ALPHA};
+GLenum gl_fuzzdfactors[] = {GL_ONE_MINUS_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+    GL_ONE_MINUS_SRC_ALPHA, GL_ONE};
 
 GLuint gld_DisplayList=0;
-int gl_fog_density=200;
+int fog_density=200;
 static float extra_red=0.0f;
 static float extra_green=0.0f;
 static float extra_blue=0.0f;
@@ -150,8 +158,12 @@ GLfloat cm2RGB[CR_LIMIT + 1][4] =
   {1.00f ,0.50f, 0.25f, 1.00f}, //CR_ORANGE
   {1.00f ,1.00f, 0.00f, 1.00f}, //CR_YELLOW
   {0.50f ,0.50f, 1.00f, 1.00f}, //CR_BLUE2
+  {0.00f ,0.00f, 0.00f, 1.00f}, //CR_BLACK
+  {0.50f ,0.00f, 0.50f, 1.00f}, //CR_PURPLE
+  {1.00f ,1.00f, 1.00f, 1.00f}, //CR_WHITE
   {1.00f ,1.00f, 1.00f, 1.00f}, //CR_LIMIT
 };
+
 
 void SetFrameTextureMode(void)
 {
@@ -405,8 +417,9 @@ void gld_Init(int width, int height)
 
   //e6y
   glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-
-  // do a couple dummy frames so there's something in the fb
+#ifdef __vita__
+  // Do a couple dummy frames so there is something in the framebuffer.
+  // This is the scene/present sequence used by the original Vita port.
   I_StartRendering();
   glClear(GL_COLOR_BUFFER_BIT);
   I_FinishUpdate();
@@ -414,6 +427,12 @@ void gld_Init(int width, int height)
   glClear(GL_COLOR_BUFFER_BIT);
   I_FinishUpdate();
   glFinish();
+#else
+  glClear(GL_COLOR_BUFFER_BIT);
+  gld_Finish();
+  glClear(GL_COLOR_BUFFER_BIT);
+#endif
+  glClearColor(0.0f, 0.5f, 0.5f, 1.0f);
 
   // e6y
   // if you have a prior crash in the game,
@@ -437,7 +456,7 @@ void gld_Init(int width, int height)
   // Create FBO object and associated render targets
 #ifdef USE_FBO_TECHNIQUE
   gld_InitFBO();
-  atexit(gld_FreeScreenSizeFBO);
+  I_AtExit(gld_FreeScreenSizeFBO, true);
 #endif
 
   if(!gld_LoadGLDefs("GLBDEFS"))
@@ -447,7 +466,7 @@ void gld_Init(int width, int height)
 
   gld_ResetLastTexture();
 
-  atexit(gld_CleanMemory); //e6y
+  I_AtExit(gld_CleanMemory, true); //e6y
 }
 
 void gld_InitCommandLine(void)
@@ -530,8 +549,6 @@ void gld_MapDrawSubsectors(player_t *plr, int fx, int fy, fixed_t mx, fixed_t my
   glPushMatrix();
   glScissor(fx, SCREENHEIGHT - (fy + fh), fw, fh);
   glEnable(GL_SCISSOR_TEST);
-
-  gld_EnableTexture2D(GL_TEXTURE0_ARB, true);
 
   if (automapmode & am_rotate)
   {
@@ -673,6 +690,10 @@ void gld_DrawNumPatch_f(float x, float y, int lump, int cm, enum patch_translati
     topoffset = gltexture->topoffset;
   }
 
+  // [FG] automatically center wide patches without horizontal offset
+  if (gltexture->width > 320 && leftoffset == 0)
+    x -= (float)(gltexture->width - 320) / 2;
+
   if (flags & VPT_STRETCH_MASK)
   {
     stretch_param_t *params = &stretch_params[flags & VPT_ALIGN_MASK];
@@ -810,10 +831,9 @@ void gld_FillPatch(int lump, int x, int y, int width, int height, enum patch_tra
 
 void gld_DrawLine_f(float x0, float y0, float x1, float y1, int BaseColor)
 {
+#ifdef __vita__
   const unsigned char *playpal = V_GetPlaypal();
-#if defined(__vita__)
-  // TODO: figure out how to fucking make GL_LINES work
-  // HACK: draw fucking quads instead of lines
+  // GL_LINES is unreliable on the legacy VitaGL path; use a thin quad.
   float dx, dy, t;
   float alpha = ((automapmode & am_overlay) ? map_lines_overlay_trans / 100.0f : 1.0f);
   if (alpha == 0)
@@ -826,20 +846,19 @@ void gld_DrawLine_f(float x0, float y0, float x1, float y1, int BaseColor)
   dy *= t;
 
   gld_EnableTexture2D(GL_TEXTURE0_ARB, false);
-
   glColor4f((float)playpal[3*BaseColor]/255.0f,
             (float)playpal[3*BaseColor+1]/255.0f,
             (float)playpal[3*BaseColor+2]/255.0f,
             alpha);
   glBegin(GL_TRIANGLE_STRIP);
-    glVertex2f( x0, y0 );
-    glVertex2f( x1, y1 );
-    glVertex2f( x0 + dx, y0 + dy);
-    glVertex2f( x1 + dx, y1 + dy);
+    glVertex2f(x0, y0);
+    glVertex2f(x1, y1);
+    glVertex2f(x0 + dx, y0 + dy);
+    glVertex2f(x1 + dx, y1 + dy);
   glEnd();
-
   gld_EnableTexture2D(GL_TEXTURE0_ARB, true);
 #elif defined(USE_VERTEX_ARRAYS) || defined(USE_VBO)
+  const unsigned char *playpal = V_GetPlaypal();
   unsigned char r, g, b, a;
   map_line_t *line;
   
@@ -867,6 +886,8 @@ void gld_DrawLine_f(float x0, float y0, float x1, float y1, int BaseColor)
   line->point[1].b = b;
   line->point[1].a = a;
 #else
+  const unsigned char *playpal = V_GetPlaypal();
+  
   float alpha = ((automapmode & am_overlay) ? map_lines_overlay_trans / 100.0f : 1.0f);
   if (alpha == 0)
     return;
@@ -918,7 +939,8 @@ void gld_DrawWeapon(int weaponlump, vissprite_t *vis, int lightlevel)
   // when invisibility is about to go
   if (/*(viewplayer->mo->flags & MF_SHADOW) && */!vis->colormap)
   {
-    glBlendFunc(GL_DST_COLOR, GL_ONE_MINUS_SRC_ALPHA);
+    glBlendFunc(gl_fuzzsfactors[gl_weaponspritefuzzmode],
+            gl_fuzzdfactors[gl_weaponspritefuzzmode]);
     glAlphaFunc(GL_GEQUAL,0.1f);
     //glColor4f(0.2f,0.2f,0.2f,(float)tran_filter_pct/100.0f);
     glColor4f(0.2f,0.2f,0.2f,0.33f);
@@ -1196,7 +1218,6 @@ void gld_StartDrawScene(void)
   glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
   glScissor(viewwindowx, SCREENHEIGHT-(viewheight+viewwindowy), viewwidth, viewheight);
   glEnable(GL_SCISSOR_TEST);
-  glEnable(GL_DEPTH_TEST);
   // Player coordinates
   xCamera=-(float)viewx/MAP_SCALE;
   yCamera=(float)viewy/MAP_SCALE;
@@ -1295,10 +1316,14 @@ void gld_StartDrawScene(void)
 }
 
 //e6y
-static void gld_ProcessExtraAlpha(void)
+void gld_ProcessExtraAlpha(void)
 {
-  if (extra_alpha>0.0f)
+  if (extra_alpha>0.0f && !invul_method)
   {
+#ifndef __vita__
+    float current_color[4];
+    glGetFloatv(GL_CURRENT_COLOR, current_color);
+#endif
     glDisable(GL_ALPHA_TEST);
     glColor4f(extra_red, extra_green, extra_blue, extra_alpha);
     gld_EnableTexture2D(GL_TEXTURE0_ARB, false);
@@ -1310,6 +1335,9 @@ static void gld_ProcessExtraAlpha(void)
     glEnd();
     gld_EnableTexture2D(GL_TEXTURE0_ARB, true);
     glEnable(GL_ALPHA_TEST);
+#ifndef __vita__
+    glColor4f(current_color[0], current_color[1], current_color[2], current_color[3]);
+#endif
   }
 }
 
@@ -1353,14 +1381,6 @@ void gld_EndDrawScene(void)
   // Vortex: Black and white effect
   if (SceneInTexture)
   {
-    // below if scene is in texture
-    if (!invul_method)
-    {
-      if (gl_fake_gamma)
-        gld_BlendFakeGamma();
-      gld_ProcessExtraAlpha();
-    }
-
     // Vortex: Restore original RT
     GLEXT_glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
 
@@ -1426,13 +1446,6 @@ void gld_EndDrawScene(void)
     {
       glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_MODULATE);
     }
-
-    if (!invul_method)
-    {
-      if (gl_fake_gamma)
-        gld_BlendFakeGamma();
-      gld_ProcessExtraAlpha();
-    }
   }
 
   glColor3f(1.0f,1.0f,1.0f);
@@ -1440,7 +1453,6 @@ void gld_EndDrawScene(void)
   glDisable(GL_ALPHA_TEST);
   if (gl_shared_texture_palette)
     glDisable(GL_SHARED_TEXTURE_PALETTE_EXT);
-  glDisable(GL_DEPTH_TEST);
 }
 
 static void gld_AddDrawWallItem(GLDrawItemType itemtype, void *itemdata)
@@ -1646,6 +1658,7 @@ void gld_AddWall(seg_t *seg)
   float lineheight, linelength;
   int rellight = 0;
   int backseg;
+  dboolean fix_sky_bleed = false;
 
   int side = (seg->sidedef == &sides[seg->linedef->sidenum[0]] ? 0 : 1);
   if (linerendered[side][seg->linedef->iLineID] == rendermarker)
@@ -1784,15 +1797,27 @@ void gld_AddWall(seg_t *seg)
           toptexture == NO_TEXTURE && midtexture == NO_TEXTURE)
         {
           wall.ybottom=(float)min_ceiling/MAP_SCALE;
+          if (bs->ceilingheight < fs->floorheight)
+          {
+              fix_sky_bleed = true;
+          }
           gld_AddSkyTexture(&wall, frontsector->sky, backsector->sky, SKY_CEILING);
         }
         else
         {
-          if ((toptexture != NO_TEXTURE && midtexture == NO_TEXTURE) ||
+          if (((backsector->ceilingpic != skyflatnum && toptexture != NO_TEXTURE) && midtexture == NO_TEXTURE) ||
             backsector->ceilingpic != skyflatnum ||
             backsector->ceilingheight <= frontsector->floorheight)
           {
-            wall.ybottom=(float)max_ceiling/MAP_SCALE;
+            if (frontsector->ceilingpic == skyflatnum && frontsector->ceilingheight < backsector->floorheight)
+            {
+                wall.ybottom=(float)min_ceiling/MAP_SCALE;
+                fix_sky_bleed = true;
+            }
+            else
+            {
+                wall.ybottom=(float)max_ceiling/MAP_SCALE;
+            }
             gld_AddSkyTexture(&wall, frontsector->sky, backsector->sky, SKY_CEILING);
           }
         }
@@ -1925,8 +1950,12 @@ void gld_AddWall(seg_t *seg)
       wall.flag = GLDWF_M2S;
       URUL(wall, seg, backseg, linelength);
 
-      wall.vt = (float)((-top + ceiling_height) >> FRACBITS)/(float)wall.gltexture->realtexheight;
-      wall.vb = (float)((-bottom + ceiling_height) >> FRACBITS)/(float)wall.gltexture->realtexheight;
+      wall.vt = (float)((-top + ceiling_height))/(float)wall.gltexture->realtexheight;
+      wall.vb = (float)((-bottom + ceiling_height))/(float)wall.gltexture->realtexheight;
+
+      /* Adjust the final float value accounting for the fixed point conversion */
+      wall.vt /= FRACUNIT;
+      wall.vb /= FRACUNIT;
 
       if (seg->linedef->tranlump >= 0 && general_translucency)
         wall.alpha=(float)tran_filter_pct/100.0f;
@@ -1950,8 +1979,7 @@ bottomtexture:
       }
       else
       {
-        if (bs->floorpic == skyflatnum &&// fs->floorpic != skyflatnum &&
-          bottomtexture == NO_TEXTURE && midtexture == NO_TEXTURE)
+        if (bottomtexture == NO_TEXTURE && midtexture == NO_TEXTURE)
         {
           wall.ytop=(float)max_floor/MAP_SCALE;
           gld_AddSkyTexture(&wall, frontsector->sky, backsector->sky, SKY_CEILING);
@@ -1993,6 +2021,12 @@ bottomtexture:
       if (temptex)
       {
         wall.gltexture=temptex;
+        fixed_t rowoffset = seg->sidedef->rowoffset;
+        if (fix_sky_bleed)
+        {
+            ceiling_height = MIN(frontsector->ceilingheight, backsector->ceilingheight);
+            seg->sidedef->rowoffset += (MAX(frontsector->floorheight, backsector->floorheight) - min_ceiling);
+        }
         CALC_Y_VALUES(wall, lineheight, floor_height, ceiling_height);
         CALC_TEX_VALUES_BOTTOM(
           wall, seg, backseg, (LINE->flags & ML_DONTPEGBOTTOM)>0,
@@ -2000,6 +2034,7 @@ bottomtexture:
           floor_height-frontsector->ceilingheight
         );
         gld_AddDrawWallItem(GLDIT_WALL, &wall);
+        seg->sidedef->rowoffset = rowoffset;
       }
     }
   }
@@ -2101,7 +2136,11 @@ static void gld_DrawFlat(GLFlat *flat)
       {
         // set the current loop
         currentloop=&sectorloops[flat->sectornum].loops[loopnum];
+#ifdef __vita__
         gld_glDrawArrays(currentloop->mode,currentloop->vertexindex,currentloop->vertexcount);
+#else
+        glDrawArrays(currentloop->mode,currentloop->vertexindex,currentloop->vertexcount);
+#endif
       }
     }
 #else
@@ -2290,7 +2329,8 @@ static void gld_DrawSprite(GLSprite *sprite)
     {
       glGetIntegerv(GL_BLEND_SRC, &blend_src);
       glGetIntegerv(GL_BLEND_DST, &blend_dst);
-      glBlendFunc(GL_DST_COLOR, GL_ONE_MINUS_SRC_ALPHA);
+      glBlendFunc(gl_fuzzsfactors[gl_thingspritefuzzmode],
+            gl_fuzzdfactors[gl_thingspritefuzzmode]);
       //glColor4f(0.2f,0.2f,0.2f,(float)tran_filter_pct/100.0f);
       glAlphaFunc(GL_GEQUAL,0.1f);
       glColor4f(0.2f,0.2f,0.2f,0.33f);
@@ -2650,6 +2690,11 @@ void gld_ProjectSprite(mobj_t* thing, int lightlevel)
     sprite.fogdensity = gld_CalcFogDensity(thing->subsector->sector, lightlevel, GLDIT_SPRITE);
   }
   sprite.cm = CR_LIMIT + (int)((thing->flags & MF_TRANSLATION) >> (MF_TRANSSHIFT));
+  // [FG] colored blood and gibs
+  if (thing->flags & MF_COLOREDBLOOD)
+  {
+    sprite.cm = thing->bloodcolor;
+  }
   sprite.gltexture = gld_RegisterPatch(lump, sprite.cm, true);
   if (!sprite.gltexture)
     goto unlock_patch;
@@ -2660,6 +2705,8 @@ void gld_ProjectSprite(mobj_t* thing, int lightlevel)
 
   sprite.index = gl_spriteindex++;
   sprite.xy = thing->x + (thing->y >> 16); 
+  sprite.fx = thing->x;
+  sprite.fy = thing->y;
 
   sprite.vt = 0.0f;
   sprite.vb = sprite.gltexture->scaleyfac;
@@ -2905,16 +2952,27 @@ void gld_InitDisplayLists(void)
     flats_display_list_size = numsectors;
     flats_display_list = glGenLists(flats_display_list_size);
 
+#ifdef __vita__
     gld_glEnableClientState(GL_TEXTURE_COORD_ARRAY);
     gld_glEnableClientState(GL_VERTEX_ARRAY);
     gld_glDisableClientState(GL_COLOR_ARRAY);
+#else
+    glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glDisableClientState(GL_COLOR_ARRAY);
+#endif
 
     if (gl_ext_arb_vertex_buffer_object)
     {
       GLEXT_glBindBufferARB(GL_ARRAY_BUFFER, flats_vbo_id);
     }
+#ifdef __vita__
     gld_glVertexPointer(3, GL_FLOAT, sizeof(flats_vbo[0]), flats_vbo_x);
     gld_glTexCoordPointer(2, GL_FLOAT, sizeof(flats_vbo[0]), flats_vbo_u);
+#else
+    glVertexPointer(3, GL_FLOAT, sizeof(flats_vbo[0]), flats_vbo_x);
+    glTexCoordPointer(2, GL_FLOAT, sizeof(flats_vbo[0]), flats_vbo_u);
+#endif
 
     for (i = 0; i < flats_display_list_size; i++)
     {
@@ -2924,7 +2982,11 @@ void gld_InitDisplayLists(void)
       {
         // set the current loop
         currentloop = &sectorloops[i].loops[loopnum];
+#ifdef __vita__
         gld_glDrawArrays(currentloop->mode, currentloop->vertexindex, currentloop->vertexcount);
+#else
+        glDrawArrays(currentloop->mode, currentloop->vertexindex, currentloop->vertexcount);
+#endif
       }
 
       glEndList();
@@ -2946,7 +3008,11 @@ void gld_InitDisplayLists(void)
         {
           // set the current loop
           currentloop = &sectorloops[i].loops[loopnum];
+#ifdef __vita__
           gld_glDrawArrays(currentloop->mode, currentloop->vertexindex, currentloop->vertexcount);
+#else
+          glDrawArrays(currentloop->mode, currentloop->vertexindex, currentloop->vertexcount);
+#endif
         }
 
         glEndList();
@@ -2960,9 +3026,15 @@ void gld_InitDisplayLists(void)
       // bind with 0, so, switch back to normal pointer operation
       GLEXT_glBindBufferARB(GL_ARRAY_BUFFER, 0);
     }
+#ifdef __vita__
     gld_glDisableClientState(GL_TEXTURE_COORD_ARRAY);
     gld_glDisableClientState(GL_VERTEX_ARRAY);
     gld_glDisableClientState(GL_COLOR_ARRAY);
+#else
+    glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+    glDisableClientState(GL_VERTEX_ARRAY);
+    glDisableClientState(GL_COLOR_ARRAY);
+#endif
   }
 }
 
@@ -3004,14 +3076,17 @@ void gld_DrawScene(player_t *player)
 #if defined(USE_VERTEX_ARRAYS) || defined(USE_VBO)
   if (!gl_use_display_lists)
   {
+#ifdef __vita__
     gld_glEnableClientState(GL_TEXTURE_COORD_ARRAY);
     gld_glEnableClientState(GL_VERTEX_ARRAY);
     gld_glDisableClientState(GL_COLOR_ARRAY);
+#else
+    glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glDisableClientState(GL_COLOR_ARRAY);
+#endif
   }
 #endif
-
-  // all the following items are opaque or masked
-  glDisable(GL_BLEND);
 
   //e6y: skybox
   skybox = 0;
@@ -3027,7 +3102,7 @@ void gld_DrawScene(player_t *player)
       gld_DrawDomeSkyBox();
     }
     //e6y: 3d emulation of screen quad
-    else if (gl_drawskys == skytype_screen)
+    if (gl_drawskys == skytype_screen)
     {
       gld_DrawScreenSkybox();
     }
@@ -3040,8 +3115,13 @@ void gld_DrawScene(player_t *player)
     {
       GLEXT_glBindBufferARB(GL_ARRAY_BUFFER, flats_vbo_id);
     }
+#ifdef __vita__
     gld_glVertexPointer(3, GL_FLOAT, sizeof(flats_vbo[0]), flats_vbo_x);
     gld_glTexCoordPointer(2, GL_FLOAT, sizeof(flats_vbo[0]), flats_vbo_u);
+#else
+    glVertexPointer(3, GL_FLOAT, sizeof(flats_vbo[0]), flats_vbo_x);
+    glTexCoordPointer(2, GL_FLOAT, sizeof(flats_vbo[0]), flats_vbo_u);
+#endif
   }
 #endif
 
@@ -3051,10 +3131,10 @@ void gld_DrawScene(player_t *player)
   // opaque stuff
   //
 
+  glBlendFunc(GL_ONE, GL_ZERO);
+
   // solid geometry
   glDisable(GL_ALPHA_TEST);
-
-  glBlendFunc(GL_ONE, GL_ZERO);
 
   // enable backside removing
   glEnable(GL_CULL_FACE);
@@ -3224,9 +3304,6 @@ void gld_DrawScene(player_t *player)
   // transparent stuff
   //
 
-  // the following items might be translucent
-  glEnable(GL_BLEND);
-
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
   if (gl_blend_animations)
@@ -3272,43 +3349,75 @@ void gld_DrawScene(player_t *player)
   gld_RenderShadows();
   glsl_SetActiveShader(sh_main);
 
+  /* Transparent sprites and transparent things must be rendered
+   * in far-to-near order. The approach used here is to sort in-
+   * place by comparing the next farthest items in the queue.
+   * There are known limitations to this approach, but it is
+   * a trade-off of accuracy for speed.
+   * Refer to the discussion below for more detail.
+   * https://github.com/coelckers/prboom-plus/pull/262
+   */
   if (gld_drawinfo.num_items[GLDIT_TWALL] > 0 || gld_drawinfo.num_items[GLDIT_TSPRITE] > 0)
   {
-    if (gld_drawinfo.num_items[GLDIT_TWALL] > 0)
-    {
-      // if translucency percentage is less than 50,
-      // then all translucent textures and sprites disappear completely
-      // without this line
-      glAlphaFunc(GL_GREATER, 0.0f);
+      int twall_idx   = gld_drawinfo.num_items[GLDIT_TWALL] - 1;
+      int tsprite_idx = gld_drawinfo.num_items[GLDIT_TSPRITE] - 1;
 
-      // transparent walls
-      for (i = gld_drawinfo.num_items[GLDIT_TWALL] - 1; i >= 0; i--)
+      if (tsprite_idx > 0)
+          gld_DrawItemsSortSprites(GLDIT_TSPRITE);
+
+      while (twall_idx >= 0 || tsprite_idx >= 0 )
       {
-        gld_SetFog(gld_drawinfo.items[GLDIT_TWALL][i].item.wall->fogdensity);
-        gld_ProcessWall(gld_drawinfo.items[GLDIT_TWALL][i].item.wall);
+          dboolean draw_tsprite = false;
+
+          /* find out what is next to draw */
+          if (twall_idx >= 0 && tsprite_idx >= 0)
+          {
+              /* both are left to draw, determine
+               * which is farther */
+              seg_t *twseg = gld_drawinfo.items[GLDIT_TWALL][twall_idx].item.wall->seg;
+              int ti;
+              for (ti = tsprite_idx; ti >= 0; ti--) {
+                  /* reconstruct the sprite xy */
+                  fixed_t tsx = gld_drawinfo.items[GLDIT_TSPRITE][ti].item.sprite->fx;
+                  fixed_t tsy = gld_drawinfo.items[GLDIT_TSPRITE][ti].item.sprite->fy;
+
+                  if (R_PointOnSegSide(tsx, tsy, twseg))
+                  {
+                      /* a thing is behind the seg */
+                      /* do not draw the seg yet */
+                      draw_tsprite = true;
+                      break;
+                  }
+              }
+          }
+          else if (tsprite_idx >= 0)
+          {
+              /* no transparent walls left, draw a sprite */
+              draw_tsprite = true;
+          }
+          /* fall-through case is draw wall */
+
+          if (draw_tsprite)
+          {
+              /* transparent sprite is farther, draw it */
+              glAlphaFunc(GL_GEQUAL, gl_mask_sprite_threshold_f);
+              gld_SetFog(gld_drawinfo.items[GLDIT_TSPRITE][tsprite_idx].item.sprite->fogdensity);
+              gld_DrawSprite(gld_drawinfo.items[GLDIT_TSPRITE][tsprite_idx].item.sprite);
+              tsprite_idx--;
+          }
+          else
+          {
+              glDepthMask(GL_FALSE);
+              /* transparent wall is farther, draw it */
+              glAlphaFunc(GL_GREATER, 0.0f);
+              gld_SetFog(gld_drawinfo.items[GLDIT_TWALL][twall_idx].item.wall->fogdensity);
+              gld_ProcessWall(gld_drawinfo.items[GLDIT_TWALL][twall_idx].item.wall);
+              glDepthMask(GL_TRUE);
+              twall_idx--;
+          }
       }
-    }
-
-    glEnable(GL_ALPHA_TEST);
-
-    // transparent sprites
-    // sorting is necessary only for transparent sprites.
-    // from back to front
-    if (gld_drawinfo.num_items[GLDIT_TSPRITE] > 0)
-    {
-      glAlphaFunc(GL_GEQUAL, gl_mask_sprite_threshold_f);
-      glDepthMask(GL_FALSE);
-      gld_DrawItemsSortSprites(GLDIT_TSPRITE);
-      for (i = gld_drawinfo.num_items[GLDIT_TSPRITE] - 1; i >= 0; i--)
-      {
-        gld_SetFog(gld_drawinfo.items[GLDIT_TSPRITE][i].item.sprite->fogdensity);
-        gld_DrawSprite(gld_drawinfo.items[GLDIT_TSPRITE][i].item.sprite);
-      }
-      glDepthMask(GL_TRUE);
-    }
-
-    // restoring
-    glAlphaFunc(GL_GEQUAL, 0.5f);
+      glAlphaFunc(GL_GEQUAL, 0.5f);
+      glEnable(GL_ALPHA_TEST);
   }
 
   // e6y: detail
@@ -3325,9 +3434,15 @@ void gld_DrawScene(player_t *player)
       // bind with 0, so, switch back to normal pointer operation
       GLEXT_glBindBufferARB(GL_ARRAY_BUFFER, 0);
     }
+#ifdef __vita__
     gld_glDisableClientState(GL_TEXTURE_COORD_ARRAY);
     gld_glDisableClientState(GL_VERTEX_ARRAY);
     gld_glDisableClientState(GL_COLOR_ARRAY);
+#else
+    glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+    glDisableClientState(GL_VERTEX_ARRAY);
+    glDisableClientState(GL_COLOR_ARRAY);
+#endif
   }
 #endif
 

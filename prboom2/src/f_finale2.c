@@ -49,6 +49,7 @@
 
 void F_StartCast (void);
 void F_TextWrite(void);
+void F_BunnyScroll(void);
 
 void WI_checkForAccelerate(void);    // killough 3/28/98: used to
 float Get_TextSpeed(void);
@@ -74,19 +75,13 @@ void FMI_StartFinale(void)
 
 	if (!finaletext) finaletext = "The End";	// this is to avoid a crash on a missing text in the last map.
 
-	finaleflat = gamemapinfo->interbackdrop[0] ? gamemapinfo->interbackdrop : "FLOOR4_8";	// use a single fallback for all maps.
-	if (gamemapinfo->intermusic[0])
+	if (gamemapinfo->interbackdrop[0])
 	{
-		int l = W_CheckNumForName(gamemapinfo->intermusic);
-		if (l >= 0) S_ChangeMusInfoMusic(l, true);
-	}
-	else
-	{
-		S_ChangeMusic(gamemode == commercial ? mus_read_m : mus_victor, true);
+		finaleflat = gamemapinfo->interbackdrop;
 	}
 
-	finalestage = 0;
-	finalecount = 0;
+	if (!finaleflat) finaleflat = "FLOOR4_8";	// use a single fallback for all maps.
+
 	using_FMI = true;
 }
 
@@ -139,6 +134,9 @@ void FMI_Ticker(void)
 					if (!stricmp(gamemapinfo->endpic, "$BUNNY"))
 					{
 						S_StartMusic(mus_bunny);
+					}
+					else if (!stricmp(gamemapinfo->endpic, "!"))
+					{
 						using_FMI = false;
 					}
 				}
@@ -161,10 +159,14 @@ void FMI_Drawer(void)
 	{
 		F_TextWrite();
 	}
+	else if (strcmp(gamemapinfo->endpic, "$BUNNY") == 0)
+	{
+		F_BunnyScroll();
+	}
 	else
 	{
-		V_DrawNamePatch(0, 0, 0, gamemapinfo->endpic, CR_DEFAULT, VPT_STRETCH);
 		// e6y: wide-res
 		V_FillBorder(-1, 0);
+		V_DrawNamePatch(0, 0, 0, gamemapinfo->endpic, CR_DEFAULT, VPT_STRETCH);
 	}
 }

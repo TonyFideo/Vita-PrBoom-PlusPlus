@@ -52,6 +52,9 @@
 #include "g_overflow.h"
 #include "e6y.h"//e6y
 
+// [FG] colored blood and gibs
+dboolean colored_blood;
+
 //
 // P_SetMobjState
 // Returns true if the mobj is still present.
@@ -68,10 +71,10 @@ dboolean P_SetMobjState(mobj_t* mobj,statenum_t state)
   static int recursion;                       // detects recursion
   statenum_t i = state;                       // initial state
   dboolean ret = true;                         // return value
-  statenum_t tempstate[NUMSTATES];            // for use with recursion
+  statenum_t* tempstate = NULL;               // for use with recursion
 
   if (recursion++)                            // if recursion detected,
-    memset(seenstate=tempstate,0,sizeof tempstate); // clear state table
+    seenstate = tempstate = calloc(NUMSTATES, sizeof(statenum_t)); // allocate state table
 
   do
     {
@@ -106,6 +109,9 @@ dboolean P_SetMobjState(mobj_t* mobj,statenum_t state)
   if (!--recursion)
     for (;(state=seenstate[i]);i=state-1)
       seenstate[i] = 0;  // killough 4/9/98: erase memory of states
+
+  if (tempstate)
+    free(tempstate);
 
   return ret;
 }
@@ -329,6 +335,8 @@ static void P_XYMovement (mobj_t* mo)
       // killough 10/98:
       // Don't affect main player when voodoo dolls stop, except in old demos:
 
+      // COMPAT: MBF compares (demo_version < 203) here, i.e. this should read
+      //         (compatibility_level < lxdoom_1_compatibility)
       if (player && (unsigned)(player->mo->state - states - S_PLAY_RUN1) < 4
     && (player->mo == mo || compatibility_level >= lxdoom_1_compatibility))
   P_SetMobjState(player->mo, S_PLAY);
@@ -600,7 +608,7 @@ floater:
 
         mo->player->deltaviewheight = mo->momz>>3;
         //e6y: compatibility optioned
-        if (comp[comp_sound] || (mo->health>0)) /* cph - prevent "oof" when dead */
+        if (default_comp[comp_sound] || (mo->health>0)) /* cph - prevent "oof" when dead */
     S_StartSound (mo, sfx_oof);
       }
   }
@@ -697,9 +705,7 @@ static void P_NightmareRespawn(mobj_t* mobj)
    * regardless of that point's nature. SMMU and Eternity need this for
    * script-spawned things like Halif Swordsmythe, as well.
    *
-   * cph - copied from eternity, except comp_respawnfix becomes comp_respawn
-   *   and the logic is reversed (i.e. like the rest of comp_ it *disables*
-   *   the fix)
+   * cph - copied from eternity, alias comp_respawnfix
    */
   if(!comp[comp_respawn] && !x && !y)
   {
@@ -993,7 +999,11 @@ void P_RemoveMobj (mobj_t* mobj)
 
   // stop any playing sound
 
-  S_StopSound (mobj);
+  // [FG] removed map objects may finish their sounds
+  if (full_sounds)
+    S_UnlinkSound(mobj);
+  else
+    S_StopSound (mobj);
 
   // killough 11/98:
   //
@@ -1359,7 +1369,7 @@ mobj_t* P_SpawnMapThing (const mapthing_t* mthing, int index)
   // check for apropriate skill level
 
   /* jff "not single" thing flag */
-  if (!netgame && options & MTF_NOTSINGLE)
+  if (!coop_spawns && !netgame && options & MTF_NOTSINGLE)
     return NULL;
 
   //jff 3/30/98 implement "not deathmatch" thing flag
@@ -1369,7 +1379,7 @@ mobj_t* P_SpawnMapThing (const mapthing_t* mthing, int index)
 
   //jff 3/30/98 implement "not cooperative" thing flag
 
-  if (netgame && !deathmatch && options & MTF_NOTCOOP)
+  if ((coop_spawns || netgame) && !deathmatch && options & MTF_NOTCOOP)
     return NULL;
 
   // killough 11/98: simplify
@@ -1495,10 +1505,11 @@ void P_SpawnPuff(fixed_t x,fixed_t y,fixed_t z)
 }
 
 
+
 //
 // P_SpawnBlood
 //
-void P_SpawnBlood(fixed_t x,fixed_t y,fixed_t z,int damage)
+void P_SpawnBlood(fixed_t x,fixed_t y,fixed_t z,int damage, mobj_t* bleeder)
 {
   mobj_t* th;
   // killough 5/5/98: remove dependence on order of evaluation:
@@ -1507,6 +1518,11 @@ void P_SpawnBlood(fixed_t x,fixed_t y,fixed_t z,int damage)
   th = P_SpawnMobj(x,y,z, MT_BLOOD);
   th->momz = FRACUNIT*2;
   th->tics -= P_Random(pr_spawnblood)&3;
+  if (colored_blood)
+  {
+    th->flags |= MF_COLOREDBLOOD;
+    th->bloodcolor = V_BloodColor(bleeder->info->bloodcolor);
+  }
 
   if (th->tics < 1)
     th->tics = 1;

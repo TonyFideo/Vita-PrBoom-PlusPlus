@@ -170,7 +170,13 @@ int extralight;                           // bumped light from gun blasts
 // killough 5/2/98: reformatted
 //
 
+// Workaround for optimization bug in clang
+// fixes desync in competn/doom/fp2-3655.lmp and in dmnsns.wad dmn01m909.lmp
+#if defined(__clang__)
+PUREFUNC int R_PointOnSide(volatile fixed_t x, volatile fixed_t y, const node_t *node)
+#else
 PUREFUNC int R_PointOnSide(fixed_t x, fixed_t y, const node_t *node)
+#endif
 {
   if (!node->dx)
     return x <= node->x ? node->dy > 0 : node->dy < 0;
@@ -806,6 +812,12 @@ void R_ExecuteSetViewSize (void)
   pspritexscale = (wide_centerx << FRACBITS) / 160;
   pspriteyscale = (((cheight*viewwidth)/SCREENWIDTH) << FRACBITS) / 200;
   pspriteiscale = FixedDiv (FRACUNIT, pspritexscale);
+  // [FG] make sure that the product of the weapon sprite scale factor
+  //      and its reciprocal is always at least FRACUNIT to
+  //      fix garbage lines at the top of weapon sprites
+  pspriteiyscale = FixedDiv (FRACUNIT, pspriteyscale);
+  while (FixedMul(pspriteiyscale, pspriteyscale) < FRACUNIT)
+    pspriteiyscale++;
 
   //e6y: added for GL
   pspritexscale_f = (float)wide_centerx/160.0f;

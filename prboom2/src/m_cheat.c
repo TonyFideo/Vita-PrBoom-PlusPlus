@@ -46,6 +46,8 @@
 #include "d_deh.h"  // Ty 03/27/98 - externalized strings
 /* cph 2006/07/23 - needs direct access to thinkercap */
 #include "p_tick.h"
+#include "e6y.h" // G_GotoNextLevel()
+#include "w_wad.h" // W_GetLumpInfoByNum()
 
 #define plyr (players+consoleplayer)     /* the console player */
 
@@ -68,6 +70,7 @@ static void cheat_noclip();
 static void cheat_pw();
 static void cheat_behold();
 static void cheat_clev();
+static void cheat_clev0();
 static void cheat_mypos();
 static void cheat_rate();
 static void cheat_comp();
@@ -91,6 +94,9 @@ static void cheat_megaarmour();
 static void cheat_health();
 static void cheat_notarget();
 static void cheat_fly();
+static void cheat_skill();
+static void cheat_comp_ext();
+static void cheat_shorttics();
 
 //-----------------------------------------------------------------------------
 //
@@ -131,6 +137,7 @@ cheatseq_t cheat[] = {
   CHEAT("idbeholdl",  "Lite-Amp Goggles", not_dm, cheat_pw, pw_infrared),
   CHEAT("idbehold",   "BEHOLD menu",      not_dm, cheat_behold, 0),
   CHEAT("idclev",     "Level Warp",       cht_never | not_menu, cheat_clev, -2),
+  CHEAT("idclev",     "Level Warp",       cht_never | not_menu, cheat_clev0, 0),
   CHEAT("idmypos",    "Player Position",  not_dm, cheat_mypos, 0),
   CHEAT("idrate",     "Frame rate",       always, cheat_rate, 0),
   // phares
@@ -185,6 +192,15 @@ cheatseq_t cheat[] = {
   CHEAT("notarget",   NULL,               cht_never, cheat_notarget, 0),
   // fly mode is active
   CHEAT("fly",        NULL,               cht_never, cheat_fly, 0),
+  // Show skill level
+  CHEAT("skill",      NULL,               always, cheat_skill, 0),
+
+  // Complevels with parameters
+  CHEAT("tntcl",      NULL,               cht_never, cheat_comp_ext, -2),
+
+  // Enable/disable shorttics in-game
+  CHEAT("tntshort",   NULL,               cht_never, cheat_shorttics, 0),
+
   // end-of-list marker
   {NULL}
 };
@@ -242,6 +258,26 @@ static void cheat_choppers()
 
 static void cheat_god()
 {                                    // 'dqd' cheat for toggleable god mode
+  // dead players are first respawned at the current position
+  if (plyr->playerstate == PST_DEAD)
+    {
+      signed int an;
+      mapthing_t mt = {0};
+
+      P_MapStart();
+      mt.x = plyr->mo->x >> FRACBITS;
+      mt.y = plyr->mo->y >> FRACBITS;
+      mt.angle = (plyr->mo->angle + ANG45/2)*(uint_64_t)45/ANG45;
+      mt.type = consoleplayer + 1;
+      mt.options = 1; // arbitrary non-zero value
+      P_SpawnPlayer(consoleplayer, &mt);
+
+      // spawn a teleport fog
+      an = plyr->mo->angle >> ANGLETOFINESHIFT;
+      P_SpawnMobj(plyr->mo->x+20*finecosine[an], plyr->mo->y+20*finesine[an], plyr->mo->z, MT_TFOG);
+      S_StartSound(plyr, sfx_slop);
+      P_MapEnd();
+    }
   plyr->cheats ^= CF_GODMODE;
   if (plyr->cheats & CF_GODMODE)
     {
@@ -315,7 +351,7 @@ static void cheat_kfa()
 {
   cheat_k();
   cheat_fa();
-  plyr->message = STSTR_KFAADDED;
+  plyr->message = s_STSTR_KFAADDED;
 }
 
 static void cheat_noclip()
@@ -351,9 +387,24 @@ extern int EpiCustom;
 struct MapEntry* G_LookupMapinfo(int gameepisode, int gamemap);
 
 // 'clev' change-level cheat
+static void cheat_clev0()
+{
+  int epsd, map;
+  char *next;
+
+  G_GotoNextLevel(&epsd, &map);
+  next = MAPNAME(epsd, map);
+
+  if (W_CheckNumForName(next) != -1)
+    doom_printf("Current: %s, Next: %s",  W_GetLumpInfoByNum(maplumpnum)->name, next);
+  else
+    doom_printf("Current: %s",  W_GetLumpInfoByNum(maplumpnum)->name);
+}
+
 static void cheat_clev(char buf[3])
 {
   int epsd, map;
+  struct MapEntry* entry;
 
   if (gamemode == commercial)
     {
@@ -367,22 +418,18 @@ static void cheat_clev(char buf[3])
     }
 
   // First check if we have a mapinfo entry for the requested level. If this is present the remaining checks should be skipped.
-  struct MapEntry* entry = G_LookupMapinfo(epsd, map);
+  entry = G_LookupMapinfo(epsd, map);
   if (!entry)
   {
+	  char *next;
 
 	  // Catch invalid maps.
-	  if (epsd < 1 || map < 1 ||   // Ohmygod - this is not going to work.
-		  //e6y: The fourth episode for pre-ultimate complevels is not allowed.
-		  (compatibility_level < ultdoom_compatibility && (epsd > 3)) ||
-		  (gamemode == retail && (epsd > 4 || map > 9)) ||
-		  (gamemode == registered && (epsd > 3 || map > 9)) ||
+	  if (epsd < 1 || map < 0 ||   // Ohmygod - this is not going to work.
+		  ((gamemode == retail || gamemode == registered) && (epsd > 9 || map > 9)) ||
 		  (gamemode == shareware && (epsd > 1 || map > 9)) ||
-		  (gamemode == commercial && (epsd > 1 || map > 33)))  //jff no 33 and 34
-		  return;                                                  //8/14/98 allowed
-
-	  if (!bfgedition && map == 33)
+		  (gamemode == commercial && map > 99))
 		  return;
+
 	  if (gamemission == pack_nerve && map > 9)
 		  return;
 
@@ -390,6 +437,13 @@ static void cheat_clev(char buf[3])
 	  if (gamemission == chex)
 	  {
 		  epsd = 1;
+	  }
+
+	  next = MAPNAME(epsd, map);
+	  if (W_CheckNumForName(next) == -1)
+	  {
+		  doom_printf("IDCLEV target not found: %s", next);
+		  return;
 	  }
   }
   // So be it.
@@ -425,8 +479,7 @@ static void cheat_comp()
   // must call G_Compatibility after changing compatibility_level
   // (fixes sf bug number 1558738)
   G_Compatibility();
-  doom_printf("New compatibility level:\n%s",
-        comp_lev_str[compatibility_level]);
+  doom_printf("New compatibility level:\n%s (%d)", comp_lev_str[compatibility_level], compatibility_level);
 }
 
 // variable friction cheat
@@ -641,6 +694,11 @@ static void cheat_fly()
   }
 }
 
+static void cheat_skill()
+{
+  doom_printf("Skill: %d", gameskill+1);
+}
+
 //-----------------------------------------------------------------------------
 // 2/7/98: Cheat detection rewritten by Lee Killough, to avoid
 // scrambling and to use a more general table-driven approach.
@@ -835,4 +893,32 @@ dboolean M_FindCheats(int key)
     return M_FindCheats_Boom(key);
   else
     return M_FindCheats_Doom(key);
+}
+
+// Extended compatibility cheat
+static void cheat_comp_ext(char buf[3])
+{
+  int cl = atoi(buf);
+  if(cl == 0 && (buf[0] != '0' || buf[1] != '0')) {
+    return;
+  }
+  if( cl < 0 || cl >= MAX_COMPATIBILITY_LEVEL ) {
+    return;
+  }
+  compatibility_level = cl;
+  G_Compatibility();
+  doom_printf("New compatibility level:\n%s (%d)", comp_lev_str[compatibility_level], compatibility_level);
+}
+
+// Enable/disable shorttics in-game
+static void cheat_shorttics()
+{
+  shorttics = !shorttics;
+  if (shorttics) {
+    angle_t angle = plyr->mo->angle;
+    plyr->mo->angle = (angle >> 24) << 24;
+    doom_printf("Shorttics enabled");
+  } else {
+    doom_printf("Shorttics disabled");
+  }
 }

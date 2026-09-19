@@ -43,6 +43,8 @@
 #include "doomtype.h"
 #include "lprintf.h"
 
+#define isExtensionSupported(ext) strstr(extensions, ext)
+
 int gl_version;
 
 static dboolean gl_compatibility_mode;
@@ -89,7 +91,7 @@ int clieant_active_texture_enabled[32];
 // obsolete?
 PFNGLCOLORTABLEEXTPROC              GLEXT_glColorTableEXT              = NULL;
 
-#ifdef USE_FBO_TECNIQUE
+#ifdef USE_FBO_TECHNIQUE
 /* EXT_framebuffer_object */
 PFNGLBINDFRAMEBUFFEREXTPROC         GLEXT_glBindFramebufferEXT         = NULL;
 PFNGLGENFRAMEBUFFERSEXTPROC         GLEXT_glGenFramebuffersEXT         = NULL;
@@ -154,15 +156,14 @@ PFNGLGETUNIFORMFVARBPROC         GLEXT_glGetUniformfvARB = NULL;
 #endif
 
 #ifdef __vita__
-# define getProcAddress(name) (NULL)
-#else
-# define getProcAddress(name) SDL_GL_GetProcAddress(name)
+// The old Vita port did not resolve extension symbols through SDL.
+#define SDL_GL_GetProcAddress(name) (NULL)
 #endif
 
 void gld_InitOpenGLVersion(void)
 {
 #ifdef __vita__
-  // close enough
+  // VitaGL exposes a fixed-function compatibility profile.
   gl_version = OPENGL_VERSION_1_1;
 #else
   int MajorVersion, MinorVersion;
@@ -186,8 +187,6 @@ void gld_InitOpenGLVersion(void)
   }
 #endif
 }
-
-#define isExtensionSupported(ext) strstr(extensions, ext)
 
 void gld_InitOpenGL(dboolean compatibility_mode)
 {
@@ -215,7 +214,7 @@ void gld_InitOpenGL(dboolean compatibility_mode)
     if (gl_use_paletted_texture)
     {
       gl_paletted_texture = true;
-      GLEXT_glColorTableEXT = getProcAddress("glColorTableEXT");
+      GLEXT_glColorTableEXT = SDL_GL_GetProcAddress("glColorTableEXT");
       if (GLEXT_glColorTableEXT == NULL)
         gl_paletted_texture = false;
       else
@@ -227,7 +226,7 @@ void gld_InitOpenGL(dboolean compatibility_mode)
     if (gl_use_shared_texture_palette)
     {
       gl_shared_texture_palette = true;
-      GLEXT_glColorTableEXT = getProcAddress("glColorTableEXT");
+      GLEXT_glColorTableEXT = SDL_GL_GetProcAddress("glColorTableEXT");
       if (GLEXT_glColorTableEXT == NULL)
         gl_shared_texture_palette = false;
       else
@@ -243,10 +242,10 @@ void gld_InitOpenGL(dboolean compatibility_mode)
     isExtensionSupported("GL_ARB_multitexture") != NULL;
   if (gl_arb_multitexture)
   {
-    GLEXT_glActiveTextureARB        = getProcAddress("glActiveTextureARB");
-    GLEXT_glClientActiveTextureARB  = getProcAddress("glClientActiveTextureARB");
-    GLEXT_glMultiTexCoord2fARB      = getProcAddress("glMultiTexCoord2fARB");
-    GLEXT_glMultiTexCoord2fvARB     = getProcAddress("glMultiTexCoord2fvARB");
+    GLEXT_glActiveTextureARB        = SDL_GL_GetProcAddress("glActiveTextureARB");
+    GLEXT_glClientActiveTextureARB  = SDL_GL_GetProcAddress("glClientActiveTextureARB");
+    GLEXT_glMultiTexCoord2fARB      = SDL_GL_GetProcAddress("glMultiTexCoord2fARB");
+    GLEXT_glMultiTexCoord2fvARB     = SDL_GL_GetProcAddress("glMultiTexCoord2fvARB");
 
     if (!GLEXT_glActiveTextureARB   || !GLEXT_glClientActiveTextureARB ||
         !GLEXT_glMultiTexCoord2fARB || !GLEXT_glMultiTexCoord2fvARB)
@@ -254,12 +253,6 @@ void gld_InitOpenGL(dboolean compatibility_mode)
   }
   if (gl_arb_multitexture)
     lprintf(LO_INFO,"using GL_ARB_multitexture\n");
-
-#ifdef __vita__
-  // just in case
-  GLEXT_glActiveTextureARB = glActiveTexture;
-  GLEXT_glClientActiveTextureARB = glClientActiveTexture;
-#endif
 
   //
   // ARB_texture_compression
@@ -269,7 +262,7 @@ void gld_InitOpenGL(dboolean compatibility_mode)
     isExtensionSupported("GL_ARB_texture_compression") != NULL;
   if (gl_arb_texture_compression)
   {
-    GLEXT_glCompressedTexImage2DARB = getProcAddress("glCompressedTexImage2DARB");
+    GLEXT_glCompressedTexImage2DARB = SDL_GL_GetProcAddress("glCompressedTexImage2DARB");
 
     if (!GLEXT_glCompressedTexImage2DARB)
       gl_arb_texture_compression = false;
@@ -277,7 +270,7 @@ void gld_InitOpenGL(dboolean compatibility_mode)
   if (gl_arb_texture_compression)
     lprintf(LO_INFO,"using GL_ARB_texture_compression\n");
 
-#ifdef USE_FBO_TECNIQUE
+#ifdef USE_FBO_TECHNIQUE
   //
   // EXT_framebuffer_object
   //
@@ -285,16 +278,16 @@ void gld_InitOpenGL(dboolean compatibility_mode)
     isExtensionSupported("GL_EXT_framebuffer_object") != NULL;
   if (gl_ext_framebuffer_object)
   {
-    GLEXT_glGenFramebuffersEXT         = getProcAddress("glGenFramebuffersEXT");
-    GLEXT_glBindFramebufferEXT         = getProcAddress("glBindFramebufferEXT");
-    GLEXT_glGenRenderbuffersEXT        = getProcAddress("glGenRenderbuffersEXT");
-    GLEXT_glBindRenderbufferEXT        = getProcAddress("glBindRenderbufferEXT");
-    GLEXT_glRenderbufferStorageEXT     = getProcAddress("glRenderbufferStorageEXT");
-    GLEXT_glFramebufferRenderbufferEXT = getProcAddress("glFramebufferRenderbufferEXT");
-    GLEXT_glFramebufferTexture2DEXT    = getProcAddress("glFramebufferTexture2DEXT");
-    GLEXT_glCheckFramebufferStatusEXT  = getProcAddress("glCheckFramebufferStatusEXT");
-    GLEXT_glDeleteFramebuffersEXT      = getProcAddress("glDeleteFramebuffersEXT");
-    GLEXT_glDeleteRenderbuffersEXT     = getProcAddress("glDeleteRenderbuffersEXT");
+    GLEXT_glGenFramebuffersEXT         = SDL_GL_GetProcAddress("glGenFramebuffersEXT");
+    GLEXT_glBindFramebufferEXT         = SDL_GL_GetProcAddress("glBindFramebufferEXT");
+    GLEXT_glGenRenderbuffersEXT        = SDL_GL_GetProcAddress("glGenRenderbuffersEXT");
+    GLEXT_glBindRenderbufferEXT        = SDL_GL_GetProcAddress("glBindRenderbufferEXT");
+    GLEXT_glRenderbufferStorageEXT     = SDL_GL_GetProcAddress("glRenderbufferStorageEXT");
+    GLEXT_glFramebufferRenderbufferEXT = SDL_GL_GetProcAddress("glFramebufferRenderbufferEXT");
+    GLEXT_glFramebufferTexture2DEXT    = SDL_GL_GetProcAddress("glFramebufferTexture2DEXT");
+    GLEXT_glCheckFramebufferStatusEXT  = SDL_GL_GetProcAddress("glCheckFramebufferStatusEXT");
+    GLEXT_glDeleteFramebuffersEXT      = SDL_GL_GetProcAddress("glDeleteFramebuffersEXT");
+    GLEXT_glDeleteRenderbuffersEXT     = SDL_GL_GetProcAddress("glDeleteRenderbuffersEXT");
 
     if (!GLEXT_glGenFramebuffersEXT || !GLEXT_glBindFramebufferEXT ||
         !GLEXT_glGenRenderbuffersEXT || !GLEXT_glBindRenderbufferEXT ||
@@ -305,6 +298,8 @@ void gld_InitOpenGL(dboolean compatibility_mode)
   }
   if (gl_ext_framebuffer_object)
     lprintf(LO_INFO,"using GL_EXT_framebuffer_object\n");
+#else
+  gl_ext_framebuffer_object = false;
 #endif
 
   gl_ext_packed_depth_stencil = gl_ext_packed_depth_stencil_default &&
@@ -320,7 +315,7 @@ void gld_InitOpenGL(dboolean compatibility_mode)
     isExtensionSupported("GL_EXT_blend_color") != NULL;
   if (gl_ext_blend_color)
   {
-    GLEXT_glBlendColorEXT = getProcAddress("glBlendColorEXT");
+    GLEXT_glBlendColorEXT = SDL_GL_GetProcAddress("glBlendColorEXT");
 
     if (!GLEXT_glBlendColorEXT)
       gl_ext_blend_color = false;
@@ -334,10 +329,10 @@ void gld_InitOpenGL(dboolean compatibility_mode)
     isExtensionSupported("GL_ARB_vertex_buffer_object") != NULL;
   if (gl_ext_arb_vertex_buffer_object)
   {
-    GLEXT_glGenBuffersARB = getProcAddress("glGenBuffersARB");
-    GLEXT_glDeleteBuffersARB = getProcAddress("glDeleteBuffersARB");
-    GLEXT_glBindBufferARB = getProcAddress("glBindBufferARB");
-    GLEXT_glBufferDataARB = getProcAddress("glBufferDataARB");
+    GLEXT_glGenBuffersARB = SDL_GL_GetProcAddress("glGenBuffersARB");
+    GLEXT_glDeleteBuffersARB = SDL_GL_GetProcAddress("glDeleteBuffersARB");
+    GLEXT_glBindBufferARB = SDL_GL_GetProcAddress("glBindBufferARB");
+    GLEXT_glBufferDataARB = SDL_GL_GetProcAddress("glBufferDataARB");
 
     if (!GLEXT_glGenBuffersARB || !GLEXT_glDeleteBuffersARB ||
         !GLEXT_glBindBufferARB || !GLEXT_glBufferDataARB)
@@ -353,14 +348,14 @@ void gld_InitOpenGL(dboolean compatibility_mode)
     isExtensionSupported("GL_ARB_pixel_buffer_object") != NULL;
   if (gl_arb_pixel_buffer_object)
   {
-    GLEXT_glGenBuffersARB = getProcAddress("glGenBuffersARB");
-    GLEXT_glBindBufferARB = getProcAddress("glBindBufferARB");
-    GLEXT_glBufferDataARB = getProcAddress("glBufferDataARB");
-    GLEXT_glBufferSubDataARB = getProcAddress("glBufferSubDataARB");
-    GLEXT_glDeleteBuffersARB = getProcAddress("glDeleteBuffersARB");
-    GLEXT_glGetBufferParameterivARB = getProcAddress("glGetBufferParameterivARB");
-    GLEXT_glMapBufferARB = getProcAddress("glMapBufferARB");
-    GLEXT_glUnmapBufferARB = getProcAddress("glUnmapBufferARB");
+    GLEXT_glGenBuffersARB = SDL_GL_GetProcAddress("glGenBuffersARB");
+    GLEXT_glBindBufferARB = SDL_GL_GetProcAddress("glBindBufferARB");
+    GLEXT_glBufferDataARB = SDL_GL_GetProcAddress("glBufferDataARB");
+    GLEXT_glBufferSubDataARB = SDL_GL_GetProcAddress("glBufferSubDataARB");
+    GLEXT_glDeleteBuffersARB = SDL_GL_GetProcAddress("glDeleteBuffersARB");
+    GLEXT_glGetBufferParameterivARB = SDL_GL_GetProcAddress("glGetBufferParameterivARB");
+    GLEXT_glMapBufferARB = SDL_GL_GetProcAddress("glMapBufferARB");
+    GLEXT_glUnmapBufferARB = SDL_GL_GetProcAddress("glUnmapBufferARB");
 
     if (!GLEXT_glGenBuffersARB || !GLEXT_glBindBufferARB ||
         !GLEXT_glBufferDataARB || !GLEXT_glBufferSubDataARB ||
@@ -389,29 +384,29 @@ void gld_InitOpenGL(dboolean compatibility_mode)
     isExtensionSupported ("GL_ARB_shading_language_100");
   if (gl_arb_shader_objects)
   {
-		GLEXT_glDeleteObjectARB        = getProcAddress("glDeleteObjectARB");
-		GLEXT_glGetHandleARB           = getProcAddress("glGetHandleARB");
-		GLEXT_glDetachObjectARB        = getProcAddress("glDetachObjectARB");
-		GLEXT_glCreateShaderObjectARB  = getProcAddress("glCreateShaderObjectARB");
-		GLEXT_glShaderSourceARB        = getProcAddress("glShaderSourceARB");
-		GLEXT_glCompileShaderARB       = getProcAddress("glCompileShaderARB");
-		GLEXT_glCreateProgramObjectARB = getProcAddress("glCreateProgramObjectARB");
-		GLEXT_glAttachObjectARB        = getProcAddress("glAttachObjectARB");
-		GLEXT_glLinkProgramARB         = getProcAddress("glLinkProgramARB");
-		GLEXT_glUseProgramObjectARB    = getProcAddress("glUseProgramObjectARB");
-		GLEXT_glValidateProgramARB     = getProcAddress("glValidateProgramARB");
+		GLEXT_glDeleteObjectARB        = SDL_GL_GetProcAddress("glDeleteObjectARB");
+		GLEXT_glGetHandleARB           = SDL_GL_GetProcAddress("glGetHandleARB");
+		GLEXT_glDetachObjectARB        = SDL_GL_GetProcAddress("glDetachObjectARB");
+		GLEXT_glCreateShaderObjectARB  = SDL_GL_GetProcAddress("glCreateShaderObjectARB");
+		GLEXT_glShaderSourceARB        = SDL_GL_GetProcAddress("glShaderSourceARB");
+		GLEXT_glCompileShaderARB       = SDL_GL_GetProcAddress("glCompileShaderARB");
+		GLEXT_glCreateProgramObjectARB = SDL_GL_GetProcAddress("glCreateProgramObjectARB");
+		GLEXT_glAttachObjectARB        = SDL_GL_GetProcAddress("glAttachObjectARB");
+		GLEXT_glLinkProgramARB         = SDL_GL_GetProcAddress("glLinkProgramARB");
+		GLEXT_glUseProgramObjectARB    = SDL_GL_GetProcAddress("glUseProgramObjectARB");
+		GLEXT_glValidateProgramARB     = SDL_GL_GetProcAddress("glValidateProgramARB");
 
-		GLEXT_glUniform1fARB = getProcAddress("glUniform1fARB");
-		GLEXT_glUniform2fARB = getProcAddress("glUniform2fARB");
-		GLEXT_glUniform1iARB = getProcAddress("glUniform1iARB");
+		GLEXT_glUniform1fARB = SDL_GL_GetProcAddress("glUniform1fARB");
+		GLEXT_glUniform2fARB = SDL_GL_GetProcAddress("glUniform2fARB");
+		GLEXT_glUniform1iARB = SDL_GL_GetProcAddress("glUniform1iARB");
 
-		GLEXT_glGetObjectParameterfvARB = getProcAddress("glGetObjectParameterfvARB");
-		GLEXT_glGetObjectParameterivARB = getProcAddress("glGetObjectParameterivARB");
-		GLEXT_glGetInfoLogARB           = getProcAddress("glGetInfoLogARB");
-		GLEXT_glGetAttachedObjectsARB   = getProcAddress("glGetAttachedObjectsARB");
-		GLEXT_glGetUniformLocationARB   = getProcAddress("glGetUniformLocationARB");
-		GLEXT_glGetActiveUniformARB     = getProcAddress("glGetActiveUniformARB");
-		GLEXT_glGetUniformfvARB         = getProcAddress("glGetUniformfvARB");
+		GLEXT_glGetObjectParameterfvARB = SDL_GL_GetProcAddress("glGetObjectParameterfvARB");
+		GLEXT_glGetObjectParameterivARB = SDL_GL_GetProcAddress("glGetObjectParameterivARB");
+		GLEXT_glGetInfoLogARB           = SDL_GL_GetProcAddress("glGetInfoLogARB");
+		GLEXT_glGetAttachedObjectsARB   = SDL_GL_GetProcAddress("glGetAttachedObjectsARB");
+		GLEXT_glGetUniformLocationARB   = SDL_GL_GetProcAddress("glGetUniformLocationARB");
+		GLEXT_glGetActiveUniformARB     = SDL_GL_GetProcAddress("glGetActiveUniformARB");
+		GLEXT_glGetUniformfvARB         = SDL_GL_GetProcAddress("glGetUniformfvARB");
 
     if (!GLEXT_glDeleteObjectARB || !GLEXT_glGetHandleARB ||
         !GLEXT_glDetachObjectARB || !GLEXT_glCreateShaderObjectARB ||
@@ -469,12 +464,16 @@ void gld_InitOpenGL(dboolean compatibility_mode)
   }
 
 #ifdef __vita__
-  // wrong some rights
+  // VitaGL exposes these entry points directly rather than through SDL.
   GLEXT_CLAMP_TO_EDGE = GL_CLAMP_TO_EDGE;
   gl_arb_texture_non_power_of_two = true;
   gl_arb_texture_compression = true;
-  // gl_use_stencil = true;
   GLEXT_glCompressedTexImage2DARB = glCompressedTexImage2D;
+  // The old texture_matrix fork does not expose glMultiTexCoord*; retain
+  // the original Vita port's single-texture-coordinate rendering path.
+  GLEXT_glActiveTextureARB = glActiveTexture;
+  GLEXT_glClientActiveTextureARB = glClientActiveTexture;
+  gl_arb_multitexture = false;
 #endif
 
   //init states manager
@@ -577,7 +576,11 @@ void gld_EnableClientCoordArray(GLenum texture, int enable)
     if (!clieant_active_texture_enabled[arb])
     {
       GLEXT_glClientActiveTextureARB(texture);
+#ifdef __vita__
       gld_glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+#else
+      glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+#endif
       GLEXT_glClientActiveTextureARB(GL_TEXTURE0_ARB);
 
       clieant_active_texture_enabled[arb] = enable;
@@ -588,7 +591,11 @@ void gld_EnableClientCoordArray(GLenum texture, int enable)
     if (clieant_active_texture_enabled[arb])
     {
       GLEXT_glClientActiveTextureARB(texture);
+#ifdef __vita__
       gld_glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+#else
+      glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+#endif
       GLEXT_glClientActiveTextureARB(GL_TEXTURE0_ARB);
 
       clieant_active_texture_enabled[arb] = enable;
@@ -689,8 +696,7 @@ void SetTextureMode(tex_mode_e type)
 
 #ifdef __vita__
 
-// custom array drawing functions
-
+// VitaGL's legacy client-array submission path used by the original port.
 static struct VtxArray
 {
   GLboolean enabled;
@@ -726,21 +732,23 @@ void gld_glTexCoordPointer(GLint size, GLenum type, GLsizei stride, const GLvoid
 
 void gld_glEnableClientState(GLenum array)
 {
-  switch (array) {
+  switch (array)
+  {
     case GL_VERTEX_ARRAY:        vtx_arrays[0].enabled = GL_TRUE; break;
     case GL_COLOR_ARRAY:         vtx_arrays[1].enabled = GL_TRUE; break;
     case GL_TEXTURE_COORD_ARRAY: vtx_arrays[2].enabled = GL_TRUE; break;
-    default:                     break;
+    default: break;
   }
 }
 
 void gld_glDisableClientState(GLenum array)
 {
-  switch (array) {
+  switch (array)
+  {
     case GL_VERTEX_ARRAY:        vtx_arrays[0].enabled = GL_FALSE; break;
     case GL_COLOR_ARRAY:         vtx_arrays[1].enabled = GL_FALSE; break;
     case GL_TEXTURE_COORD_ARRAY: vtx_arrays[2].enabled = GL_FALSE; break;
-    default:                     break;
+    default: break;
   }
 }
 
@@ -749,24 +757,26 @@ void gld_glDrawArrays(GLenum mode, GLint first, GLsizei count)
   if (vtx_arrays[2].enabled)
   {
     glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-    vglTexCoordPointer(vtx_arrays[2].size, vtx_arrays[2].type, vtx_arrays[2].stride,
-      count, vtx_arrays[2].ptr + first * vtx_arrays[2].stride);
+    vglTexCoordPointer(vtx_arrays[2].size, vtx_arrays[2].type,
+      vtx_arrays[2].stride, count,
+      vtx_arrays[2].ptr + first * vtx_arrays[2].stride);
   }
 
   if (vtx_arrays[1].enabled)
   {
     glEnableClientState(GL_COLOR_ARRAY);
-    vglColorPointer(vtx_arrays[1].size, vtx_arrays[1].type, vtx_arrays[1].stride,
-      count, vtx_arrays[1].ptr + first * vtx_arrays[1].stride);
+    vglColorPointer(vtx_arrays[1].size, vtx_arrays[1].type,
+      vtx_arrays[1].stride, count,
+      vtx_arrays[1].ptr + first * vtx_arrays[1].stride);
   }
 
-  // bind vertices and draw
   if (vtx_arrays[0].enabled)
   {
     glEnableClientState(GL_VERTEX_ARRAY);
     vglIndexPointerImmediate();
-    vglVertexPointer(vtx_arrays[0].size, vtx_arrays[0].type, vtx_arrays[0].stride,
-      count, vtx_arrays[0].ptr + first * vtx_arrays[0].stride);
+    vglVertexPointer(vtx_arrays[0].size, vtx_arrays[0].type,
+      vtx_arrays[0].stride, count,
+      vtx_arrays[0].ptr + first * vtx_arrays[0].stride);
     vglDrawObjects(mode, count, GL_TRUE);
     glDisableClientState(GL_VERTEX_ARRAY);
   }
@@ -774,14 +784,5 @@ void gld_glDrawArrays(GLenum mode, GLint first, GLsizei count)
   glDisableClientState(GL_TEXTURE_COORD_ARRAY);
   glDisableClientState(GL_COLOR_ARRAY);
 }
-
-#else
-
-void gld_glVertexPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer) { glVertexPointer(size, type, stride, pointer); }
-void gld_glColorPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer) { glColorPointer(size, type, stride, pointer); }
-void gld_glTexCoordPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer) { glTexCoordPointer(size, type, stride, pointer); }
-void gld_glEnableClientState(GLenum array) { glEnableClientState(array); }
-void gld_glDisableClientState(GLenum array) { glDisableClientState(array); }
-void gld_glDrawArrays(GLenum mode, GLint first, GLsizei count) { glDrawArrays(mode, first, count); }
 
 #endif

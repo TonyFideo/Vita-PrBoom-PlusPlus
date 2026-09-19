@@ -57,6 +57,10 @@
 extern int render_vsync;
 extern int render_screen_multiply;
 extern int screen_multiply;
+// 2.6.66 configuration fields retained by the legacy Vita video backend.
+extern int exclusive_fullscreen;
+extern int integer_scaling;
+extern int vanilla_keymap;
 
 extern SDL_Window *sdl_window;
 extern SDL_Renderer *sdl_renderer;
@@ -81,6 +85,7 @@ void I_StartRendering(void);
 void I_StopRendering(int wait);
 void I_UpdateNoBlit(void);
 void I_FinishUpdate(void);
+int I_GetFPS(void);
 
 int I_ScreenShot (const char *fname);
 // NSM expose lower level screen data grab for vidcap

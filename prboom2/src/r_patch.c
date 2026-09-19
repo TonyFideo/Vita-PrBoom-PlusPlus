@@ -109,6 +109,21 @@ static rpatch_t *texture_composites = 0;
 // indices of two duplicate PLAYPAL entries, second is -1 if none found
 static int playpal_transparent, playpal_duplicate;
 
+static dboolean DuplicatePaletteEntry(const char *playpal, int i, int j) {
+  int colormap_i;
+
+  if (playpal[3 * i + 0] != playpal[3 * j + 0] ||
+      playpal[3 * i + 1] != playpal[3 * j + 1] ||
+      playpal[3 * i + 2] != playpal[3 * j + 2])
+    return false;
+
+  for (colormap_i = 0; colormap_i < NUMCOLORMAPS; ++colormap_i)
+    if (colormaps[0][colormap_i * 256 + i] != colormaps[0][colormap_i * 256 + j])
+      return false;
+
+  return true;
+}
+
 //---------------------------------------------------------------------------
 void R_InitPatches(void) {
   if (!patches)
@@ -119,9 +134,9 @@ void R_InitPatches(void) {
   }
   if (!texture_composites)
   {
-    texture_composites = malloc(r_numtextures * sizeof(rpatch_t));
+    texture_composites = malloc(numtextures * sizeof(rpatch_t));
     // clear out new patches to signal they're uninitialized
-    memset(texture_composites, 0, sizeof(rpatch_t)*r_numtextures);
+    memset(texture_composites, 0, sizeof(rpatch_t)*numtextures);
   }
 
   if (!playpal_duplicate)
@@ -138,9 +153,7 @@ void R_InitPatches(void) {
     {
       for (j = i+1; j < 256; j++)
       {
-        if (playpal[3*i+0] == playpal[3*j+0] &&
-            playpal[3*i+1] == playpal[3*j+1] &&
-            playpal[3*i+2] == playpal[3*j+2])
+        if (DuplicatePaletteEntry(playpal, i, j))
         {
           found = 1;
           break;
@@ -176,7 +189,7 @@ void R_FlushAllPatches(void) {
   }
   if (texture_composites)
   {
-    for (i=0; i<r_numtextures; i++)
+    for (i=0; i<numtextures; i++)
       if (texture_composites[i].data)
         free(texture_composites[i].data);
     free(texture_composites);
@@ -629,13 +642,13 @@ static void createTextureCompositePatch(int id) {
   count_t *countsInColumn;
 
 #ifdef RANGECHECK
-  if (id >= r_numtextures)
-    I_Error("createTextureCompositePatch: %i >= r_numtextures", id);
+  if (id >= numtextures)
+    I_Error("createTextureCompositePatch: %i >= numtextures", id);
 #endif
 
   composite_patch = &texture_composites[id];
 
-  texture = r_textures[id];
+  texture = textures[id];
 
   composite_patch->width = texture->width;
   composite_patch->height = texture->height;
@@ -914,8 +927,8 @@ const rpatch_t *R_CacheTextureCompositePatchNum(int id) {
     I_Error("R_CacheTextureCompositePatchNum: Composite patches not initialized");
 
 #ifdef RANGECHECK
-  if (id >= r_numtextures)
-    I_Error("createTextureCompositePatch: %i >= r_numtextures", id);
+  if (id >= numtextures)
+    I_Error("createTextureCompositePatch: %i >= numtextures", id);
 #endif
 
   if (!texture_composites[id].data)
@@ -933,7 +946,7 @@ const rpatch_t *R_CacheTextureCompositePatchNum(int id) {
 #ifdef SIMPLECHECKS
   if (!((texture_composites[id].locks+1) & 0xf))
     lprintf(LO_DEBUG, "R_CacheTextureCompositePatchNum: High lock on %.8s (%d)\n",
-	    r_textures[id]->name, texture_composites[id].locks);
+	    textures[id]->name, texture_composites[id].locks);
 #endif
 
   return &texture_composites[id];
@@ -946,7 +959,7 @@ void R_UnlockTextureCompositePatchNum(int id)
 #ifdef SIMPLECHECKS
   if ((signed short)texture_composites[id].locks < unlocks)
     lprintf(LO_DEBUG, "R_UnlockTextureCompositePatchNum: Excess unlocks on %8s (%d-%d)\n", 
-	    r_textures[id]->name, texture_composites[id].locks, unlocks);
+	    textures[id]->name, texture_composites[id].locks, unlocks);
 #endif
   texture_composites[id].locks -= unlocks;
   /* cph - Note: must only tell z_zone to make purgeable if currently locked, 

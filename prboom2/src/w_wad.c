@@ -61,6 +61,8 @@
 #include "r_demo.h"
 #include "e6y.h"
 
+#include "m_io.h"
+
 //
 // GLOBALS
 //
@@ -142,13 +144,18 @@ static void W_AddFile(wadfile_info_t *wadfile)
   filelump_t  singleinfo;
   int         flags = 0;
 
+  if (wadfile->src == source_skip)
+  {
+    return;
+  }
+
   // open the file and add to directory
 
-  wadfile->handle = open(wadfile->name,O_RDONLY | O_BINARY);
+  wadfile->handle = M_open(wadfile->name,O_RDONLY | O_BINARY);
 
 #ifdef HAVE_NET
   if (wadfile->handle == -1 && D_NetGetWad(wadfile->name)) // CPhipps
-    wadfile->handle = open(wadfile->name,O_RDONLY | O_BINARY);
+    wadfile->handle = M_open(wadfile->name,O_RDONLY | O_BINARY);
 #endif
 
   if (wadfile->handle == -1 &&
@@ -157,7 +164,7 @@ static void W_AddFile(wadfile_info_t *wadfile)
     !strcasecmp(wadfile->name + strlen(wadfile->name) - 4 , ".wad") &&
     D_TryGetWad(wadfile->name))
   {
-    wadfile->handle = open(wadfile->name, O_RDONLY | O_BINARY);
+    wadfile->handle = M_open(wadfile->name, O_RDONLY | O_BINARY);
   }
 
   if (wadfile->handle == -1) 
@@ -439,18 +446,6 @@ int W_GetNumForName (const char* name)     // killough -- const added
   int i = W_CheckNumForName (name);
   if (i == -1)
     I_Error("W_GetNumForName: %.8s not found", name);
-  return i;
-}
-
-// e6y
-// W_SafeGetNumForName
-// Calls W_CheckNumForName, and returns (-1) if any error happens
-// Makes sense for doom.wad v1.2 for skip of some absent sounds
-int W_SafeGetNumForName(const char *name)
-{
-  int i = W_CheckNumForName (name);
-  if (i == -1)
-    lprintf(LO_DEBUG, "W_GetNumForName: %.8s not found\n", name);
   return i;
 }
 

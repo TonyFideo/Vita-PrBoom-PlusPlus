@@ -54,6 +54,8 @@
 #include "am_map.h"
 #include "lprintf.h"
 
+#include "m_io.h"
+
 static FILE *levelinfo;
 
 static int gld_max_vertexes = 0;
@@ -673,7 +675,7 @@ static void gld_PrecalculateSector(int num)
             // the angle of the last candidate
             // e6y: for finding an angle between AB and BC vectors we should subtract
             // (BC - BA) == (BC - (180 - AB)) == (angle-(180-lineangle))
-            if (D_abs(angle-(180-lineangle))<D_abs(bestangle))
+            if (D_abs((int) angle - (180 - (int) lineangle))<D_abs((int) bestangle))
             {
               bestline=i;
               bestangle=angle-(180-lineangle);
@@ -860,7 +862,7 @@ static void gld_PreprocessSectors(void)
 #endif
 
 #ifdef PRBOOM_DEBUG
-  levelinfo=fopen("levelinfo.txt","a");
+  levelinfo=M_fopen("levelinfo.txt","a");
   if (levelinfo)
   {
     if (gamemode==commercial)
@@ -1112,8 +1114,13 @@ void gld_PreprocessLevel(void)
       GLEXT_glBindBufferARB(GL_ARRAY_BUFFER, flats_vbo_id);
     }
 
+#ifdef __vita__
     gld_glVertexPointer(3, GL_FLOAT, sizeof(flats_vbo[0]), flats_vbo_x);
     gld_glTexCoordPointer(2, GL_FLOAT, sizeof(flats_vbo[0]), flats_vbo_u);
+#else
+    glVertexPointer(3, GL_FLOAT, sizeof(flats_vbo[0]), flats_vbo_x);
+    glTexCoordPointer(2, GL_FLOAT, sizeof(flats_vbo[0]), flats_vbo_u);
+#endif
   }
 #endif
 

@@ -4,7 +4,7 @@
  *
  *  PrBoom: a Doom port merged with LxDoom and LSDLDoom
  *  based on BOOM, a modified and improved DOOM engine
- *  Copyright 2006 - 2008 G Jackson, Jaakko Kerônen
+ *  Copyright 2006 - 2008 G Jackson, Jaakko KerÃ´nen
  *  Copyright 2009 - Andrey Budko
  *
  *  This program is free software; you can redistribute it and/or
@@ -36,6 +36,9 @@
 #include "SDL.h"
 #ifdef HAVE_LIBSDL2_IMAGE
 #include "SDL_image.h"
+#endif
+#ifdef __vita__
+#include "SDL/i_image.h"
 #endif
 
 #include "gl_opengl.h"
@@ -69,7 +72,11 @@ am_icon_t am_icons[am_icon_count + 1] =
 
 typedef struct map_nice_thing_s
 {
+#ifdef __vita__
   vbo_vertex_t v[6];
+#else
+  vbo_xy_uv_rgba_t v[4];
+#endif
 } PACKEDATTR map_nice_thing_t;
 
 static array_t map_things[am_icon_count];
@@ -89,7 +96,11 @@ void gld_InitMapPics(void)
 #ifdef HAVE_LIBSDL2_IMAGE
       SDL_Surface *surf_raw;
 
+#ifdef __vita__
+      surf_raw = I_LoadImageRW(SDL_RWFromConstMem(W_CacheLumpNum(lump), W_LumpLength(lump)), true);
+#else
       surf_raw = IMG_Load_RW(SDL_RWFromConstMem(W_CacheLumpNum(lump), W_LumpLength(lump)), true);
+#endif
 
       surf = SDL_ConvertSurface(surf_raw, &RGBAFormat, 0);
       SDL_FreeSurface(surf_raw);
@@ -116,7 +127,7 @@ void gld_InitMapPics(void)
 #endif
         }
 
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, R_GL_MIPMAP_LINEAR_FILTER);//tex_filter[MIP_PATCH].min_filter);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);//tex_filter[MIP_PATCH].min_filter);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);//tex_filter[MIP_PATCH].mag_filter);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
@@ -137,11 +148,17 @@ void gld_AddNiceThing(int type, float x, float y, float radius, float angle,
   float sina_r = (float)sin(angle) * radius;
   float cosa_r = (float)cos(angle) * radius;
 
+#ifdef __vita__
+#define MAP_NICE_THING_INIT_Z(index) thing->v[index].z = 0.f;
+#else
+#define MAP_NICE_THING_INIT_Z(index)
+#endif
+
 #define MAP_NICE_THING_INIT(index, _x, _y, _u, _v) \
   { \
     thing->v[index].x = _x; \
     thing->v[index].y = _y; \
-    thing->v[index].z = 0.f; \
+    MAP_NICE_THING_INIT_Z(index) \
     thing->v[index].u = _u; \
     thing->v[index].v = _v; \
     thing->v[index].r = r; \
@@ -152,17 +169,24 @@ void gld_AddNiceThing(int type, float x, float y, float radius, float angle,
 
   MAP_NICE_THING_INIT(0, x + sina_r + cosa_r, y - cosa_r + sina_r, 1.0f, 0.0f);
   MAP_NICE_THING_INIT(1, x + sina_r - cosa_r, y - cosa_r - sina_r, 0.0f, 0.0f);
+#ifdef __vita__
   MAP_NICE_THING_INIT(2, x - sina_r + cosa_r, y + cosa_r + sina_r, 1.0f, 1.0f);
   MAP_NICE_THING_INIT(3, x + sina_r - cosa_r, y - cosa_r - sina_r, 0.0f, 0.0f);
   MAP_NICE_THING_INIT(4, x - sina_r - cosa_r, y + cosa_r - sina_r, 0.0f, 1.0f);
   MAP_NICE_THING_INIT(5, x - sina_r + cosa_r, y + cosa_r + sina_r, 1.0f, 1.0f);
+#else
+  MAP_NICE_THING_INIT(2, x - sina_r - cosa_r, y + cosa_r - sina_r, 0.0f, 1.0f);
+  MAP_NICE_THING_INIT(3, x - sina_r + cosa_r, y + cosa_r + sina_r, 1.0f, 1.0f);
+#endif
 
 #undef MAP_NICE_THING_INIT
+#undef MAP_NICE_THING_INIT_Z
 }
 
 void gld_DrawNiceThings(int fx, int fy, int fw, int fh)
 {
   int i;
+  int j;
 
   glScissor(fx, SCREENHEIGHT - (fy + fh), fw, fh);
   glEnable(GL_SCISSOR_TEST);
@@ -173,9 +197,15 @@ void gld_DrawNiceThings(int fx, int fy, int fw, int fh)
 
 #if defined(USE_VERTEX_ARRAYS) || defined(USE_VBO)
   // activate vertex array, texture coord array and color arrays
+#ifdef __vita__
   gld_glEnableClientState(GL_VERTEX_ARRAY);
   gld_glEnableClientState(GL_TEXTURE_COORD_ARRAY);
   gld_glEnableClientState(GL_COLOR_ARRAY);
+#else
+  glEnableClientState(GL_VERTEX_ARRAY);
+  glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+  glEnableClientState(GL_COLOR_ARRAY);
+#endif
 #endif
 
   for (i = 0; i < am_icon_count; i++)
@@ -192,16 +222,24 @@ void gld_DrawNiceThings(int fx, int fy, int fw, int fh)
       map_nice_thing_t *thing = &((map_nice_thing_t*)things->data)[0];
 
       // activate and specify pointers to arrays
+#ifdef __vita__
       gld_glVertexPointer(3, GL_FLOAT, sizeof(thing->v[0]), &thing->v[0].x);
       gld_glTexCoordPointer(2, GL_FLOAT, sizeof(thing->v[0]), &thing->v[0].u);
       gld_glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(thing->v[0]), &thing->v[0].r);
 
       gld_glDrawArrays(GL_TRIANGLES, 0, things->count * 6);
+#else
+      glVertexPointer(2, GL_FLOAT, sizeof(thing->v[0]), &thing->v[0].x);
+      glTexCoordPointer(2, GL_FLOAT, sizeof(thing->v[0]), &thing->v[0].u);
+      glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(thing->v[0]), &thing->v[0].r);
+
+      glDrawArrays(GL_QUADS, 0, things->count * 4);
+#endif
     }
 #else
-    for (i = 0; i < things->count; i++)
+    for (j = 0; j < things->count; j++)
     {
-      map_nice_thing_t *thing = &((map_nice_thing_t*)things->data)[i];
+      map_nice_thing_t *thing = &((map_nice_thing_t*)things->data)[j];
 
       glColor4ubv(&thing->v[0].r);
 
@@ -223,9 +261,15 @@ void gld_DrawNiceThings(int fx, int fy, int fw, int fh)
 
 #if defined(USE_VERTEX_ARRAYS) || defined(USE_VBO)
   // deactivate vertex array, texture coord array and color arrays
+#ifdef __vita__
   gld_glDisableClientState(GL_VERTEX_ARRAY);
   gld_glDisableClientState(GL_TEXTURE_COORD_ARRAY);
   gld_glDisableClientState(GL_COLOR_ARRAY);
+#else
+  glDisableClientState(GL_VERTEX_ARRAY);
+  glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+  glDisableClientState(GL_COLOR_ARRAY);
+#endif
 #endif
 
   gld_ResetLastTexture();
@@ -250,6 +294,7 @@ void gld_DrawMapLines(void)
     map_point_t *point = (map_point_t*)map_lines.data;
 
     gld_EnableTexture2D(GL_TEXTURE0_ARB, false);
+#ifdef __vita__
     gld_glEnableClientState(GL_VERTEX_ARRAY);
     gld_glEnableClientState(GL_COLOR_ARRAY);
 
@@ -257,10 +302,24 @@ void gld_DrawMapLines(void)
     gld_glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(point[0]), &point->r);
 
     gld_glDrawArrays(GL_LINES, 0, map_lines.count * 2);
+#else
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glEnableClientState(GL_COLOR_ARRAY);
+
+    glVertexPointer(2, GL_FLOAT, sizeof(point[0]), &point->x);
+    glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(point[0]), &point->r);
+
+    glDrawArrays(GL_LINES, 0, map_lines.count * 2);
+#endif
 
     gld_EnableTexture2D(GL_TEXTURE0_ARB, true);
+#ifdef __vita__
     gld_glDisableClientState(GL_VERTEX_ARRAY);
     gld_glDisableClientState(GL_COLOR_ARRAY);
+#else
+    glDisableClientState(GL_VERTEX_ARRAY);
+    glDisableClientState(GL_COLOR_ARRAY);
+#endif
   }
 #endif
 }

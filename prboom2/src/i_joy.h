@@ -38,7 +38,6 @@ extern int joyaxis_lookv;
 
 extern int joy_deadzone_left;
 extern int joy_deadzone_right;
-
 extern int joy_permastrafe;
 
 extern int usejoystick;

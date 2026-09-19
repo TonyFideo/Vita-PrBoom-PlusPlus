@@ -69,7 +69,11 @@
 #define ENDGAME     "are you sure you want to end the game?\n\n"PRESSYN
 #define RESTARTLEVEL "restart the level?\n\n"PRESSYN
 
+#ifdef __vita__
+#define DOSY        "(press x to quit)"
+#else
 #define DOSY        "(press y to quit)"
+#endif
 
 #define DETAILHI    "High detail"
 #define DETAILLO    "Low detail"

@@ -60,6 +60,8 @@
 #include <dpmi.h>
 #endif
 
+#include "m_io.h"
+
 // Tunables
 
 // Alignment of zone memory (benefit may be negated by HEADER_SIZE, CHUNK_SIZE)
@@ -178,7 +180,7 @@ void Z_DumpMemory(void)
   len = doom_snprintf(NULL, 0, "%s/memdump.%d", HEAPDUMP_DIR, dump);
   buf = malloc(len+1);
   doom_snprintf(buf, len+1, "%s/memdump.%d", HEAPDUMP_DIR, dump);
-  fp = fopen(buf, "w");
+  fp = M_fopen(buf, "w");
   for (tag = PU_FREE; tag < PU_MAX; tag++)
   {
     memblock_t* end_block, *block;
@@ -319,7 +321,7 @@ void Z_Init(void)
   /* cph - remove unnecessary initialisations to 0 */
 #endif
 #ifdef HEAPDUMP
-  atexit(Z_DumpMemory);
+  I_AtExit(Z_DumpMemory, true);
 #endif
 #endif
 }

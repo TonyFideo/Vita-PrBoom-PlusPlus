@@ -58,8 +58,10 @@
 int useglgamma;
 int gl_DeviceSupportsGamma = false;
 
+#ifdef __vita__
 int gl_fake_gamma = 1;
 int gl_fake_gamma_value = 1;
+#endif
 
 static Uint16 gl_oldHardwareGamma[3][256];
 
@@ -128,11 +130,13 @@ int gld_SetGammaRamp(int gamma)
 
   if (!gl_DeviceSupportsGamma)
   {
+#ifdef __vita__
     if (gl_fake_gamma)
     {
       gl_fake_gamma_value = gamma;
       return true;
     }
+#endif
     return false;
   }
 
@@ -215,6 +219,7 @@ void gld_ApplyGammaRamp(byte *buf, int pitch, int width, int height)
   }
 }
 
+#ifdef __vita__
 void gld_BlendFakeGamma(void)
 {
   float gammaf;
@@ -242,3 +247,4 @@ void gld_BlendFakeGamma(void)
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   glEnable(GL_DEPTH_TEST);
 }
+#endif

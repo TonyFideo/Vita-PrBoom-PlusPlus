@@ -110,6 +110,7 @@ extern int  key_left;
 extern int  key_up;
 extern int  key_down;
 extern int  key_mlook;
+extern int  key_novert;
 extern int  key_menu_right;                                  // phares 3/7/98
 extern int  key_menu_left;                                   //     |
 extern int  key_menu_up;                                     //     V
@@ -135,8 +136,8 @@ extern int  key_fire;
 extern int  key_use;
 extern int  key_strafe;
 extern int  key_speed;
-extern int  key_escape_alt;
 extern int  key_escape;                                             // phares
+extern int  key_escape_alt;
 extern int  key_savegame;                                           //    |
 extern int  key_loadgame;                                           //    V
 extern int  key_autorun;
@@ -174,6 +175,16 @@ extern int  key_weapon8;
 extern int  key_weapon9;
 extern int  key_nextweapon;
 extern int  key_prevweapon;
+extern int  mb_weapon1;
+extern int  mb_weapon2;
+extern int  mb_weapon3;
+extern int  mb_weapon4;
+extern int  mb_weapon5;
+extern int  mb_weapon6;
+extern int  mb_weapon7;
+extern int  mb_weapon8;
+extern int  mb_weapon9;
+extern int  destination_keys[MAXPLAYERS];
 extern int  key_map_right;
 extern int  key_map_left;
 extern int  key_map_up;
@@ -190,8 +201,21 @@ extern int  key_map_rotate; // cph - map rotation
 extern int  key_map_overlay;// cph - map overlay
 extern int  key_map_textured;  //e6y: textured automap
 extern int  key_screenshot;    // killough 2/22/98 -- add key for screenshot
-extern int  destination_keys[MAXPLAYERS];
 extern int  autorun;           // always running?                   // phares
+extern int  mousebfire;
+extern int  mousebstrafe;
+extern int  mousebforward;
+extern int  mousebbackward;
+extern int  mousebturnright;
+extern int  mousebturnleft;
+extern int  mousebuse;
+extern int  mousebspeed;
+extern int  joybfire;
+extern int  joybstrafe;
+extern int  joybstrafeleft;
+extern int  joybstraferight;
+extern int  joybuse;
+extern int  joybspeed;
 
 extern int  defaultskill;      //jff 3/24/98 default skill
 extern dboolean haswolflevels;  //jff 4/18/98 wolf levels present
@@ -217,6 +241,9 @@ extern const char * comp_lev_str[];
 // with the same mouse behaviour as when recording,
 // but without having to be recording every time.
 extern int shorttics;
+
+// automatic pistol start when advancing from one level to the next
+extern int pistolstart;
 
 //e6y: for r_demo.c
 extern int longtics;

@@ -80,7 +80,8 @@ typedef struct
 } channel_t;
 
 // the set of channels available
-static channel_t *channels;
+static channel_t channels[MAX_CHANNELS];
+static degenmobj_t sobjs[MAX_CHANNELS];
 
 // These are not used, but should be (menu).
 // Maximum volume of a sound effect.
@@ -94,7 +95,7 @@ int snd_MusicVolume = 15;
 static dboolean mus_paused;
 
 // music currently being played
-static musicinfo_t *mus_playing;
+musicinfo_t *mus_playing;
 
 // music currently should play
 static int musicnum_current;
@@ -114,7 +115,10 @@ int idmusnum;
 
 void S_StopChannel(int cnum);
 
-int S_AdjustSoundParams(mobj_t *listener, mobj_t *source,
+// Will start a sound at a given volume.
+static void S_StartSoundAtVolume(degenmobj_t *origin, int sound_id, int volume);
+
+int S_AdjustSoundParams(mobj_t *listener, degenmobj_t *source,
                         int *vol, int *sep, int *pitch);
 
 static int S_getChannel(void *origin, sfxinfo_t *sfxinfo, int is_pickup);
@@ -141,16 +145,19 @@ void S_Init(int sfxVolume, int musicVolume)
 
     S_SetSfxVolume(sfxVolume);
 
-    // Allocating the internal channels for mixing
-    // (the maximum numer of sounds rendered
-    // simultaneously) within zone memory.
-    // CPhipps - calloc
-    channels =
-      (channel_t *) calloc(numChannels,sizeof(channel_t));
+    // Reset channel memory
+    memset(channels, 0, sizeof(channels));
+    memset(sobjs, 0, sizeof(sobjs));
 
     // Note that sounds have not been cached (yet).
     for (i=1 ; i<NUMSFX ; i++)
-      S_sfx[i].lumpnum = S_sfx[i].usefulness = -1;
+    {
+      sfxinfo_t *sfx = &S_sfx[i];
+      sfx->lumpnum = I_GetSfxLumpNum(sfx);
+
+      if (sfx->lumpnum >= 0)
+        W_LockLumpNum(sfx->lumpnum);
+    }
   }
 
   // CPhipps - music init reformatted
@@ -178,6 +185,15 @@ void S_Stop(void)
 // Kills playing sounds at start of level,
 //  determines music if any, changes music.
 //
+
+static inline int WRAP(int i, int w)
+{
+  while (i < 0)
+    i += w;
+
+  return i % w;
+}
+
 void S_Start(void)
 {
   int mnum;
@@ -195,6 +211,7 @@ void S_Start(void)
 	  int muslump = W_CheckNumForName(gamemapinfo->music);
 	  if (muslump >= 0)
 	  {
+		  musinfo.items[0] = muslump;
 		  S_ChangeMusInfoMusic(muslump, true);
 		  return;
 	  }
@@ -205,7 +222,7 @@ void S_Start(void)
     mnum = idmusnum; //jff 3/17/98 reload IDMUS music if not -1
   else
     if (gamemode == commercial)
-      mnum = mus_runnin + gamemap - 1;
+      mnum = mus_runnin + WRAP(gamemap - 1, NUMMUSIC - mus_runnin);
     else
       {
         static const int spmus[] =     // Song - Who? - Where?
@@ -222,9 +239,9 @@ void S_Start(void)
         };
 
         if (gameepisode < 4)
-          mnum = mus_e1m1 + (gameepisode-1)*9 + gamemap-1;
+          mnum = mus_e1m1 + WRAP((gameepisode-1)*9 + gamemap-1, mus_runnin - mus_e1m1);
         else
-          mnum = spmus[gamemap-1];
+          mnum = spmus[WRAP(gamemap-1, 9)];
       }
 
   memset(&musinfo, 0, sizeof(musinfo));
@@ -233,11 +250,10 @@ void S_Start(void)
   S_ChangeMusic(mnum, true);
 }
 
-void S_StartSoundAtVolume(void *origin_p, int sfx_id, int volume)
+static void S_StartSoundAtVolume(degenmobj_t *origin, int sfx_id, int volume)
 {
   int sep, pitch, priority, cnum, is_pickup;
   sfxinfo_t *sfx;
-  mobj_t *origin = (mobj_t *) origin_p;
 
   //jff 1/22/98 return if sound is not enabled
   if (!snd_card || nosfxparm)
@@ -277,7 +293,7 @@ void S_StartSoundAtVolume(void *origin_p, int sfx_id, int volume)
   // Check to see if it is audible, modify the params
   // killough 3/7/98, 4/25/98: code rearranged slightly
 
-  if (!origin || (origin == players[displayplayer].mo && walkcamera.type < 2)) {
+  if (!origin || (origin == (degenmobj_t*)players[displayplayer].mo && walkcamera.type < 2)) {
     sep = NORM_SEP;
     volume *= 8;
   } else
@@ -305,7 +321,7 @@ void S_StartSoundAtVolume(void *origin_p, int sfx_id, int volume)
   // kill old sound
   for (cnum=0 ; cnum<numChannels ; cnum++)
     if (channels[cnum].sfxinfo && channels[cnum].origin == origin &&
-        (comp[comp_sound] || channels[cnum].is_pickup == is_pickup))
+        (default_comp[comp_sound] || channels[cnum].is_pickup == is_pickup))
       {
         S_StopChannel(cnum);
         break;
@@ -321,10 +337,6 @@ void S_StartSoundAtVolume(void *origin_p, int sfx_id, int volume)
   // killough 2/28/98: make missing sounds non-fatal
   if (sfx->lumpnum < 0 && (sfx->lumpnum = I_GetSfxLumpNum(sfx)) < 0)
     return;
-
-  // increase the usefulness
-  if (sfx->usefulness++ < 0)
-    sfx->usefulness = 1;
 
   // Assigns the handle to one of the channels in the mix/output buffer.
   { // e6y: [Fix] Crash with zero-length sounds.
@@ -358,6 +370,34 @@ void S_StopSound(void *origin)
       }
 }
 
+// [FG] disable sound cutoffs
+int full_sounds;
+
+void S_UnlinkSound(void *origin)
+{
+  int cnum;
+
+  //jff 1/22/98 return if sound is not enabled
+  if (!snd_card || nosfxparm)
+    return;
+
+  if (origin)
+  {
+    for (cnum = 0; cnum < numChannels; cnum++)
+    {
+      if (channels[cnum].sfxinfo && channels[cnum].origin == origin)
+      {
+        degenmobj_t *const sobj = &sobjs[cnum];
+        const mobj_t *const mobj = (mobj_t *) origin;
+        sobj->x = mobj->x;
+        sobj->y = mobj->y;
+        sobj->z = mobj->z;
+        channels[cnum].origin = (mobj_t *) sobj;
+        break;
+      }
+    }
+  }
+}
 
 //
 // Stop and resume music, during game PAUSE.
@@ -493,6 +533,7 @@ void S_ChangeMusic(int musicnum, int looping)
   // current music which should play
   musicnum_current = musicnum;
   musinfo.current_item = -1;
+  S_music[NUMMUSIC].lumpnum = -1;
 
   //jff 1/22/98 return if music is not enabled
   if (!mus_card || nomusicparm)
@@ -655,8 +696,6 @@ void S_StopChannel(int cnum)
         if (cnum != i && c->sfxinfo == channels[i].sfxinfo)
           break;
 
-      // degrade usefulness of sound data
-      c->sfxinfo->usefulness--;
       c->sfxinfo = 0;
     }
 }
@@ -668,7 +707,7 @@ void S_StopChannel(int cnum)
 // Otherwise, modifies parameters and returns 1.
 //
 
-int S_AdjustSoundParams(mobj_t *listener, mobj_t *source,
+int S_AdjustSoundParams(mobj_t *listener, degenmobj_t *source,
                         int *vol, int *sep, int *pitch)
 {
   fixed_t adx, ady,approx_dist;

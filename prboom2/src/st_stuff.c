@@ -56,6 +56,7 @@
 int ST_SCALED_HEIGHT;
 int ST_SCALED_WIDTH;
 int ST_SCALED_Y;
+int ST_SCALED_OFFSETX;
 
 // Palette indices.
 // For damage/bonus red-/gold-shifts
@@ -311,7 +312,7 @@ static patchnum_t faces[ST_NUMFACES];
 static patchnum_t faceback; // CPhipps - single background, translated for different players
 
 //e6y: status bar background
-static patchnum_t stbarbg;
+static patchnum_t stbarbg = {0};
 patchnum_t grnrock;
 patchnum_t brdr_t, brdr_b, brdr_l, brdr_r;
 patchnum_t brdr_tl, brdr_tr, brdr_bl, brdr_br;
@@ -398,6 +399,36 @@ extern char     *mapnames[];
 
 static void ST_Stop(void);
 
+// [FG] support widescreen status bar backgrounds
+
+void ST_SetScaledWidth(void)
+{
+  int width = stbarbg.width;
+
+  if (width == 0)
+      width = ST_WIDTH;
+
+  switch (render_stretch_hud)
+  {
+    case patch_stretch_16x10:
+      ST_SCALED_WIDTH  = width * patches_scalex;
+      break;
+    case patch_stretch_4x3:
+      ST_SCALED_WIDTH  = width * WIDE_SCREENWIDTH / 320;
+      break;
+    case patch_stretch_full:
+      ST_SCALED_WIDTH  = width * SCREENWIDTH / 320;
+      break;
+  }
+
+  ST_SCALED_WIDTH = (ST_SCALED_WIDTH + 3) & (int)~3;
+
+  if (ST_SCALED_WIDTH > SCREENWIDTH)
+      ST_SCALED_WIDTH = SCREENWIDTH;
+
+  ST_SCALED_OFFSETX = (SCREENWIDTH - ST_SCALED_WIDTH) / 2;
+}
+
 static void ST_refreshBackground(void)
 {
   int y = ST_Y;
@@ -406,6 +437,10 @@ static void ST_refreshBackground(void)
   if (st_statusbaron)
     {
       flags = VPT_ALIGN_BOTTOM;
+
+      // Applies palette to backfill
+      if (V_GetMode() == VID_MODE15 || V_GetMode() == VID_MODE16 || V_GetMode() == VID_MODE32)
+        R_FillBackScreen();
 
       V_DrawNumPatch(ST_X, y, BG, stbarbg.lumpnum, CR_DEFAULT, flags);
       if (!deathmatch)
@@ -420,7 +455,7 @@ static void ST_refreshBackground(void)
            displayplayer ? CR_LIMIT+displayplayer : CR_DEFAULT,
            displayplayer ? (VPT_TRANS | VPT_ALIGN_BOTTOM) : flags);
       }
-      V_CopyRect(BG, FG, ST_X + wide_offsetx, SCREENHEIGHT - ST_SCALED_HEIGHT, ST_SCALED_WIDTH, ST_SCALED_HEIGHT, VPT_NONE);
+      V_CopyRect(BG, FG, ST_X + ST_SCALED_OFFSETX, SCREENHEIGHT - ST_SCALED_HEIGHT, ST_SCALED_WIDTH, ST_SCALED_HEIGHT, VPT_NONE);
     }
 }
 
@@ -528,7 +563,7 @@ static void ST_updateFaceWidget(void)
            // was due to inversion of this test:
            // if(plyr->health - st_oldhealth > ST_MUCHPAIN)
            // e6y: compatibility optioned
-           if((comp[comp_ouchface]?
+           if((default_comp[comp_ouchface]?
               (plyr->health - st_oldhealth):
               (st_oldhealth - plyr->health)) > ST_MUCHPAIN)
             {
@@ -536,7 +571,7 @@ static void ST_updateFaceWidget(void)
               // There are TWO bugs in the ouch face code.
               // Not only was the condition reversed, but the priority system is
               // broken in a way that makes the face not work with monster damage.
-              if(!comp[comp_ouchface])
+              if(!default_comp[comp_ouchface])
                 priority = 8;
 
               st_facecount = ST_TURNCOUNT;
@@ -594,7 +629,7 @@ static void ST_updateFaceWidget(void)
            // was due to inversion of this test:
            // if(plyr->health - st_oldhealth > ST_MUCHPAIN)
            // e6y: compatibility optioned
-           if((comp[comp_ouchface]?
+           if((default_comp[comp_ouchface]?
               (plyr->health - st_oldhealth):
               (st_oldhealth - plyr->health)) > ST_MUCHPAIN)
             {
@@ -801,7 +836,8 @@ static void ST_doPaletteStuff(void)
 
 void M_ChangeApplyPalette(void)
 {
-  ST_doPaletteStuff();
+  if (gamestate == GS_LEVEL)
+    ST_doPaletteStuff();
 }
 
 static void ST_drawWidgets(dboolean refresh)
@@ -1010,6 +1046,9 @@ static void ST_loadGraphics(dboolean doload)
     }
   R_SetPatchNum(&faces[facenum++], "STFGOD0");
   R_SetPatchNum(&faces[facenum++], "STFDEAD0");
+
+  // [FG] support widescreen status bar backgrounds
+  ST_SetScaledWidth();
 }
 
 static void ST_loadData(void)

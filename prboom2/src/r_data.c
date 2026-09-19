@@ -44,6 +44,8 @@
 #include "lprintf.h"  // jff 08/03/98 - declaration of lprintf
 #include "p_tick.h"
 
+#include "m_io.h"
+
 //
 // Graphics.
 // DOOM graphics for walls and sprites
@@ -90,8 +92,8 @@ int firstcolormaplump, lastcolormaplump;      // killough 4/17/98
 
 int       firstflat, lastflat, numflats;
 int       firstspritelump, lastspritelump, numspritelumps;
-int       r_numtextures;
-texture_t **r_textures; // proff - 04/05/2000 removed static for OpenGL
+int       numtextures;
+texture_t **textures; // proff - 04/05/2000 removed static for OpenGL
 fixed_t   *textureheight; //needed for texture pegging (and TFE fix - killough)
 int       *flattranslation;             // for global animation
 int       *texturetranslation;
@@ -187,15 +189,15 @@ static void R_InitTextures (void)
       numtextures2 = 0;
       maxoff2 = 0;
     }
-  r_numtextures = numtextures1 + numtextures2;
+  numtextures = numtextures1 + numtextures2;
 
   // killough 4/9/98: make column offsets 32-bit;
   // clean up malloc-ing to use sizeof
 
-  r_textures = Z_Malloc(r_numtextures*sizeof*r_textures, PU_STATIC, 0);
-  textureheight = Z_Malloc(r_numtextures*sizeof*textureheight, PU_STATIC, 0);
+  textures = Z_Malloc(numtextures*sizeof*textures, PU_STATIC, 0);
+  textureheight = Z_Malloc(numtextures*sizeof*textureheight, PU_STATIC, 0);
 
-  for (i=0 ; i<r_numtextures ; i++, directory++)
+  for (i=0 ; i<numtextures ; i++, directory++)
     {
       if (i == numtextures1)
         {
@@ -212,7 +214,7 @@ static void R_InitTextures (void)
 
       mtexture = (const maptexture_t *) ( (const byte *)maptex + offset);
 
-      texture = r_textures[i] =
+      texture = textures[i] =
         Z_Malloc(sizeof(texture_t) +
                  sizeof(texpatch_t)*(LittleShort(mtexture->patchcount)-1),
                  PU_STATIC, 0);
@@ -221,7 +223,7 @@ static void R_InitTextures (void)
       texture->height = LittleShort(mtexture->height);
       texture->patchcount = LittleShort(mtexture->patchcount);
 
-        /* Mattias Engdegård emailed me of the following explenation of
+        /* Mattias EngdegÃ¥rd emailed me of the following explenation of
          * why memcpy doesnt work on some systems:
          * "I suppose it is the mad unaligned allocation
          * going on (and which gcc in some way manages to cope with
@@ -300,7 +302,7 @@ static void R_InitTextures (void)
   if (devparm) // cph - If in development mode, generate now so all errors are found at once
   {
     R_InitPatches(); //e6y
-    for (i=0 ; i<r_numtextures ; i++)
+    for (i=0 ; i<numtextures ; i++)
     {
       // proff - This is for the new renderer now
       R_CacheTextureCompositePatchNum(i);
@@ -316,19 +318,19 @@ static void R_InitTextures (void)
   // clean up malloc-ing to use sizeof
 
   texturetranslation =
-    Z_Malloc((r_numtextures+1)*sizeof*texturetranslation, PU_STATIC, 0);
+    Z_Malloc((numtextures+1)*sizeof*texturetranslation, PU_STATIC, 0);
 
-  for (i=0 ; i<r_numtextures ; i++)
+  for (i=0 ; i<numtextures ; i++)
     texturetranslation[i] = i;
 
   // killough 1/31/98: Initialize texture hash table
-  for (i = 0; i<r_numtextures; i++)
-    r_textures[i]->index = -1;
+  for (i = 0; i<numtextures; i++)
+    textures[i]->index = -1;
   while (--i >= 0)
     {
-      int j = W_LumpNameHash(r_textures[i]->name) % (unsigned) r_numtextures;
-      r_textures[i]->next = r_textures[j]->index;   // Prepend to chain
-      r_textures[j]->index = i;
+      int j = W_LumpNameHash(textures[i]->name) % (unsigned) numtextures;
+      textures[i]->next = textures[j]->index;   // Prepend to chain
+      textures[j]->index = i;
     }
 }
 
@@ -438,7 +440,7 @@ void R_InitTranMap(int progress)
       fnlen = doom_snprintf(NULL, 0, "%s/tranmap.dat", I_DoomExeDir());
       fname = malloc(fnlen+1);
       doom_snprintf(fname, fnlen+1, "%s/tranmap.dat", I_DoomExeDir());
-      cachefp = fopen(fname, "rb");
+      cachefp = M_fopen(fname, "rb");
 
       main_tranmap = my_tranmap = Z_Malloc(256*256, PU_STATIC, 0);  // killough 4/11/98
 
@@ -507,7 +509,7 @@ void R_InitTranMap(int progress)
                   }
               }
           }
-          if ((cachefp = fopen(fname,"wb")) != NULL) // write out the cached translucency map
+          if ((cachefp = M_fopen(fname,"wb")) != NULL) // write out the cached translucency map
             {
               cache.pct = tran_filter_pct;
               memcpy(cache.playpal, playpal, sizeof cache.playpal);
@@ -536,15 +538,41 @@ void R_InitTranMap(int progress)
 
 void R_InitData(void)
 {
+#ifdef __vita__
+  I_VitaTrace("R_InitData: enter");
+#endif
   lprintf(LO_INFO, "Textures ");
   R_InitTextures();
+#ifdef __vita__
+  I_VitaTrace("R_InitData: textures ready");
+#endif
   lprintf(LO_INFO, "Flats ");
   R_InitFlats();
+#ifdef __vita__
+  I_VitaTrace("R_InitData: flats ready");
+#endif
   lprintf(LO_INFO, "Sprites ");
   R_InitSpriteLumps();
+#ifdef __vita__
+  I_VitaTrace("R_InitData: sprites ready");
+#endif
   if (default_translucency)             // killough 3/1/98
+  {
+#ifdef __vita__
+    I_VitaTrace("R_InitData: building tranmap");
+#endif
     R_InitTranMap(1);                   // killough 2/21/98, 3/6/98
+#ifdef __vita__
+    I_VitaTrace("R_InitData: tranmap ready");
+#endif
+  }
+#ifdef __vita__
+  I_VitaTrace("R_InitData: initializing colormaps");
+#endif
   R_InitColormaps();                    // killough 3/20/98
+#ifdef __vita__
+  I_VitaTrace("R_InitData: leave");
+#endif
 }
 
 //
@@ -589,9 +617,9 @@ int PUREFUNC R_CheckTextureNumForName(const char *name)
   int i = NO_TEXTURE;
   if (*name != '-')     // "NoTexture" marker.
     {
-      i = r_textures[W_LumpNameHash(name) % (unsigned) r_numtextures]->index;
-      while (i >= 0 && strncasecmp(r_textures[i]->name,name,8))
-        i = r_textures[i]->next;
+      i = textures[W_LumpNameHash(name) % (unsigned) numtextures]->index;
+      while (i >= 0 && strncasecmp(textures[i]->name,name,8))
+        i = textures[i]->next;
     }
   return i;
 }
@@ -653,7 +681,7 @@ void R_PrecacheLevel(void)
 
   {
     int size = numflats > numsprites  ? numflats : numsprites;
-    hitlist = malloc(r_numtextures > size ? r_numtextures : size);
+    hitlist = malloc(numtextures > size ? numtextures : size);
   }
 
   // Precache flats.
@@ -669,7 +697,7 @@ void R_PrecacheLevel(void)
 
   // Precache textures.
 
-  memset(hitlist, 0, r_numtextures);
+  memset(hitlist, 0, numtextures);
 
   for (i = numsides; --i >= 0;)
     hitlist[sides[i].bottomtexture] =
@@ -685,10 +713,10 @@ void R_PrecacheLevel(void)
 
   hitlist[skytexture] = 1;
 
-  for (i = r_numtextures; --i >= 0; )
+  for (i = numtextures; --i >= 0; )
     if (hitlist[i])
       {
-        texture_t *texture = r_textures[i];
+        texture_t *texture = textures[i];
         int j = texture->patchcount;
         while (--j >= 0)
           precache_lump(texture->patches[j].patch);

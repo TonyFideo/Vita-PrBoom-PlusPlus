@@ -2,11 +2,14 @@
 #include <string.h>
 #include <errno.h>
 #include <stdlib.h> /* exit(), atexit() */
+#include "i_system.h" /* I_AtExit() */
 
 #include "p_checksum.h"
 #include "md5.h"
 #include "doomstat.h" /* players{,ingame} */
 #include "lprintf.h"
+
+#include "m_io.h"
 
 /* forward decls */
 static void p_checksum_cleanup(void);
@@ -32,12 +35,12 @@ void P_RecordChecksum(const char *file) {
     if(0 == strncmp("-",file,MIN(1,fnsize)))
         outfile = stdout;
     else {
-        outfile = fopen(file,"wb");
+        outfile = M_fopen(file,"wb");
         if(NULL == outfile) {
             I_Error("cannot open %s for writing checksum:\n%s\n",
                     file, strerror(errno));
         }
-        atexit(p_checksum_cleanup);
+        I_AtExit(p_checksum_cleanup, true);
     }
 
     MD5Init(&md5global);

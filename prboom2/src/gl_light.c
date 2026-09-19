@@ -145,7 +145,6 @@ void M_ChangeLightMode(void)
   }
 
   gl_lightmode = gl_lightmode_default;
-  lprintf(LO_INFO, "lightmode = %d, hwgamma = %d\n", gl_lightmode, useglgamma);
 
   gl_hardware_gamma = gld_light[gl_lightmode].use_hwgamma;
   gl_rellight = gld_light[gl_lightmode].rellight;
@@ -437,8 +436,14 @@ void gld_SetFog(float fogdensity)
 void gl_EnableFog(int on)
 {
   if (on) 
+  {
+    if (!gl_fogenabled)
     glEnable(GL_FOG);
+  }
   else 
-    glDisable(GL_FOG);
+  {
+    if (gl_fogenabled)
+      glDisable(GL_FOG);
+  }
   gl_fogenabled=on;
 }

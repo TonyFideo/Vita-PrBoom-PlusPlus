@@ -159,12 +159,12 @@ void gld_GetScreenSkyScale(GLWall *wall, float *scale_x, float *scale_y)
   if (!mlook_or_fov)
   {
     sx = sx / (float)wall->gltexture->buffer_width;
-    sy = 200.0f / 160.0f;//wall->gltexture->buffer_height;
+    sy = 200.0f / (wall->gltexture->buffer_height * 1.25f);
   }
   else 
   {
     sx = sx * skyscale / (float)wall->gltexture->buffer_width;
-    sy = 127.0f * skyscale / 160.0f;
+    sy = 127.0f * skyscale / (wall->gltexture->buffer_height * 1.25f);
   }
 
   *scale_x = sx;
@@ -207,7 +207,7 @@ void gld_AddSkyTexture(GLWall *wall, int sky1, int sky2, int skytype)
       else
       {
         wall->skyyaw  = -2.0f*(((270.0f-(float)((viewangle+s->textureoffset)>>ANGLETOFINESHIFT)*360.0f/FINEANGLES)+90.0f)/90.0f/skyscale);
-        wall->skyymid = skyYShift+(((float)s->rowoffset/(float)FRACUNIT)/100.0f);
+        wall->skyymid = skyYShift+(((float)s->rowoffset/(float)FRACUNIT + 28.0f)/wall->gltexture->buffer_height)/skyscale;
       }
       wall->flag = (l->special == 272 ? GLDWF_SKY : GLDWF_SKYFLIP);
     }
@@ -524,12 +524,11 @@ void gld_DrawScreenSkybox(void)
       fU1 = fU2 + 1.0f / k;
     }
 
-    glDepthMask(GL_FALSE);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_ALPHA_TEST);
 
-    glMatrixMode(GL_MODELVIEW);
     glPushMatrix();
+    glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
     glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
@@ -546,7 +545,6 @@ void gld_DrawScreenSkybox(void)
 
     glEnable(GL_ALPHA_TEST);
     glEnable(GL_DEPTH_TEST);
-    glDepthMask(GL_TRUE);
   }
 }
 
@@ -845,6 +843,7 @@ static void RenderDome(SkyBoxParams_t *sky)
   }
 
   // activate and specify pointers to arrays
+#ifdef __vita__
   gld_glVertexPointer(3, GL_FLOAT, sizeof(vbo->data[0]), sky_vbo_x);
   gld_glTexCoordPointer(2, GL_FLOAT, sizeof(vbo->data[0]), sky_vbo_u);
   gld_glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(vbo->data[0]), sky_vbo_r);
@@ -853,6 +852,16 @@ static void RenderDome(SkyBoxParams_t *sky)
   gld_glEnableClientState(GL_VERTEX_ARRAY);
   gld_glEnableClientState(GL_TEXTURE_COORD_ARRAY);
   gld_glEnableClientState(GL_COLOR_ARRAY);
+#else
+  glVertexPointer(3, GL_FLOAT, sizeof(vbo->data[0]), sky_vbo_x);
+  glTexCoordPointer(2, GL_FLOAT, sizeof(vbo->data[0]), sky_vbo_u);
+  glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(vbo->data[0]), sky_vbo_r);
+
+  // activate vertex array, texture coord array and color arrays
+  glEnableClientState(GL_VERTEX_ARRAY);
+  glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+  glEnableClientState(GL_COLOR_ARRAY);
+#endif
 #endif
 
   if (!gl_stretchsky)
@@ -882,7 +891,11 @@ static void RenderDome(SkyBoxParams_t *sky)
         continue;
 
 #if defined(USE_VERTEX_ARRAYS) || defined(USE_VBO)
+#ifdef __vita__
       gld_glDrawArrays(loop->mode, loop->vertexindex, loop->vertexcount);
+#else
+      glDrawArrays(loop->mode, loop->vertexindex, loop->vertexcount);
+#endif
 #else
       {
         int k;
@@ -905,7 +918,7 @@ static void RenderDome(SkyBoxParams_t *sky)
 
   glScalef(1.0f, 1.0f, 1.0f);
 
-  // current color is undefined after gld_glDrawArrays
+  // current color is undefined after glDrawArrays
   glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 
 #if defined(USE_VERTEX_ARRAYS) || defined(USE_VBO)
@@ -915,7 +928,11 @@ static void RenderDome(SkyBoxParams_t *sky)
     GLEXT_glBindBufferARB(GL_ARRAY_BUFFER, 0);
   }
   // deactivate color array
+#ifdef __vita__
   gld_glDisableClientState(GL_COLOR_ARRAY);
+#else
+  glDisableClientState(GL_COLOR_ARRAY);
+#endif
 #endif
 }
 
@@ -938,8 +955,8 @@ void gld_DrawDomeSkyBox(void)
 
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    glMatrixMode(GL_MODELVIEW);
     glPushMatrix();
+    glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
     glRotatef(roll,  0.0f, 0.0f, 1.0f);

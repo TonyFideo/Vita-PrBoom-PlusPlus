@@ -55,7 +55,7 @@ static struct Option audio_opts[] =
         .choice =
         {
             sample_rates, sample_rates,
-            4, 1,
+            4, 3,
         },
     },
     {

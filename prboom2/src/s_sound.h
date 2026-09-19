@@ -38,6 +38,8 @@
 #pragma interface
 #endif
 
+#define MAX_CHANNELS 32
+
 //
 // Initializes sound stuff, including volume
 // Sets channels, SFX and music volume,
@@ -61,14 +63,14 @@ void S_Start(void);
 //
 void S_StartSound(void *origin, int sound_id);
 
-// Will start a sound at a given volume.
-void S_StartSoundAtVolume(void *origin, int sound_id, int volume);
-
 // killough 4/25/98: mask used to indicate sound origin is player item pickup
 #define PICKUP_SOUND (0x8000)
 
 // Stop sound for thing at <origin>
 void S_StopSound(void* origin);
+
+extern int full_sounds;
+void S_UnlinkSound(void *origin);
 
 // Start music using <music_id> from sounds.h
 void S_StartMusic(int music_id);

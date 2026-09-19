@@ -42,7 +42,7 @@
 #ifdef __vita__
 # include <vitaGL.h>
 #else
-# include <SDL_opengl.h>
+#include <SDL_opengl.h>
 #endif
 #include <math.h>
 #include "doomstat.h"
@@ -56,6 +56,8 @@
 #include "lprintf.h"
 #include "e6y.h"
 #include "r_things.h"
+
+#include "m_io.h"
 
 GLShader *sh_main = NULL;
 static GLShader *active_shader = NULL;
@@ -90,7 +92,7 @@ static int ReadLump(const char *filename, const char *lumpname, unsigned char **
   const unsigned char *data;
   int lump;
 
-  file = fopen(filename, "r");
+  file = M_fopen(filename, "r");
   if (file)
   {
     fseek(file, 0, SEEK_END);

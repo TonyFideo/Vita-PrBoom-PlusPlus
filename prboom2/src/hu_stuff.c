@@ -53,6 +53,7 @@
 #include "lprintf.h"
 #include "e6y.h" //e6y
 #include "g_overflow.h"
+#include "i_video.h"
 
 // global heads up display controls
 
@@ -65,11 +66,11 @@ int hud_num;
 // Ty 03/28/98 -
 // These four shortcuts modifed to reflect char ** of mapnamesx[]
 // e6y: why sizeof(mapnamest)/sizeof(mapnamest[0]) does not work?
-#define HU_TITLE  (*mapnames[(gameepisode-1)*9+gamemap-1])
-#define HU_TITLE2 (gamemap <= 33 ? *mapnames2[gamemap-1] : "")
-#define HU_TITLEP (gamemap <= 32 ? *mapnamesp[gamemap-1] : "")
-#define HU_TITLET (gamemap <= 32 ? *mapnamest[gamemap-1] : "")
-#define HU_TITLEC (*mapnames[gamemap-1])
+#define HU_TITLE  ((gameepisode <= 5 && gamemap <= 9) ? *mapnames[(gameepisode-1)*9+gamemap-1] : s)
+#define HU_TITLE2 (gamemap <= 33 ? *mapnames2[gamemap-1] : s)
+#define HU_TITLEP (gamemap <= 32 ? *mapnamesp[gamemap-1] : s)
+#define HU_TITLET (gamemap <= 32 ? *mapnamest[gamemap-1] : s)
+#define HU_TITLEC (gamemap <= 5 ? *mapnames[gamemap-1] : s)
 #define HU_TITLEX 0
 //jff 2/16/98 change 167 to ST_Y-1
 // CPhipps - changed to ST_TY
@@ -152,6 +153,7 @@ static hu_itext_t     w_inputbuffer[MAXPLAYERS];
 static hu_textline_t  w_coordx; //jff 2/16/98 new coord widget for automap
 static hu_textline_t  w_coordy; //jff 3/3/98 split coord widgets automap
 static hu_textline_t  w_coordz; //jff 3/3/98 split coord widgets automap
+static hu_textline_t  w_fps;    // Vita frame-rate diagnostic widget
 static hu_textline_t  w_ammo;   //jff 2/16/98 new ammo widget for hud
 static hu_textline_t  w_health; //jff 2/16/98 new health widget for hud
 static hu_textline_t  w_armor;  //jff 2/16/98 new armor widget for hud
@@ -210,6 +212,7 @@ int hud_list_bgon;  // enable for solid window background for message list
 static char hud_coordstrx[32];
 static char hud_coordstry[32];
 static char hud_coordstrz[32];
+static char hud_fpsstr[32];
 static char hud_ammostr[80];
 static char hud_healthstr[80];
 static char hud_armorstr[80];
@@ -333,6 +336,11 @@ void HU_Init(void)
     {
       R_SetPatchNum(&hu_font2[i], "DIG45");
       R_SetPatchNum(&hu_font[i], "STCFN045");
+    }
+    else if (j=='.')
+    {
+      R_SetPatchNum(&hu_font2[i], "DIG46");
+      R_SetPatchNum(&hu_font[i], "STCFN046");
     }
     else if (j=='/')
     {
@@ -732,16 +740,21 @@ void HU_Start(void)
     &message_list
   );
 
-  if (gamemapinfo != NULL)
+  if (gamemapinfo && gamemapinfo->levelname)
   {
-	  s = gamemapinfo->mapname;
-	  while (*s)
-		  HUlib_addCharToTextLine(&w_title, *(s++));
+	  if (gamemapinfo->label)
+		  s = gamemapinfo->label;
+	  else
+		  s = gamemapinfo->mapname;
+	  if (s == gamemapinfo->mapname || strcmp(s, "-") != 0)
+	  {
+		  while (*s)
+			  HUlib_addCharToTextLine(&w_title, *(s++));
 
-	  HUlib_addCharToTextLine(&w_title, ':');
-	  HUlib_addCharToTextLine(&w_title, ' ');
+		  HUlib_addCharToTextLine(&w_title, ':');
+		  HUlib_addCharToTextLine(&w_title, ' ');
+	  }
 	  s = gamemapinfo->levelname;
-	  if (!s) s = "Unnamed";
 	  while (*s)
 		  HUlib_addCharToTextLine(&w_title, *(s++));
 
@@ -751,6 +764,10 @@ void HU_Start(void)
 	  // initialize the automap's level title widget
 	  // e6y: stop SEGV here when gamemap is not initialized
 	  if (gamestate == GS_LEVEL && gamemap > 0) /* cph - stop SEGV here when not in level */
+	  {
+		  // initialize the map title widget with the generic map lump name
+		  s = MAPNAME(gameepisode, gamemap);
+
 		  switch (gamemode)
 		  {
 		  case shareware:
@@ -765,14 +782,16 @@ void HU_Start(void)
 				  (gamemission == pack_plut) ? HU_TITLEP : HU_TITLE2;
 			  break;
 		  }
+
+		  // Chex.exe always uses the episode 1 level title
+		  // eg. E2M1 gives the title for E1M1
+		  if (gamemission == chex)
+		  {
+			  s = HU_TITLEC;
+		  }
+	  }
 	  else s = "";
 
-	  // Chex.exe always uses the episode 1 level title
-	  // eg. E2M1 gives the title for E1M1
-	  if (gamemission == chex)
-	  {
-		  s = HU_TITLEC;
-	  }
 	  while (*s)
 		  HUlib_addCharToTextLine(&w_title, *(s++));
   }
@@ -809,6 +828,18 @@ void HU_Start(void)
     hu_font,
     HU_FONTSTART,
     hudcolor_xyco,
+    VPT_ALIGN_RIGHT_TOP
+  );
+
+  // Vita frame-rate diagnostic, anchored to the upper-right corner.
+  HUlib_initTextLine
+  (
+    &w_fps,
+    0,
+    1,
+    hu_font2,
+    HU_FONTSTART,
+    CR_GRAY,
     VPT_ALIGN_RIGHT_TOP
   );
 //e6y
@@ -1062,6 +1093,15 @@ void HU_widget_draw_ammo_icon(void);
 void HU_widget_build_gkeys(void);
 void HU_widget_draw_gkeys(void);
 
+// [FG] draw Time/STS widgets above status bar
+static inline dboolean drawTimeSTSwidgets (void)
+{
+  return hudadd_timests &&
+    viewheight < SCREENHEIGHT &&
+    (!(automapmode & am_active) ||
+     (automapmode & am_overlay));
+}
+
 static hud_widget_t hud_name_widget[] =
 {
   {&w_ammo,   0, 0, 0, HU_widget_build_ammo,   HU_widget_draw_ammo,   "ammo"},
@@ -1213,6 +1253,24 @@ void HU_MoveHud(int force)
 {
   static int ohud_num = -1;
 
+  // [FG] draw Time/STS widgets above status bar
+  if (viewheight < SCREENHEIGHT)
+  {
+    if (force || ohud_num != -2)
+    {
+      w_hudadd.x = HU_TITLEX;
+      w_hudadd.y = HU_TITLEY - HU_GAPY;
+      w_hudadd.flags = VPT_ALIGN_LEFT_BOTTOM;
+
+      w_monsec.x = HU_TITLEX;
+      w_monsec.y = HU_TITLEY;
+      w_monsec.flags = VPT_ALIGN_LEFT_BOTTOM;
+
+      ohud_num = -2;
+    }
+    return;
+  }
+
   //jff 3/4/98 move displays around on F5 changing hud_distributed
   if ((huds_count > 0) && (force || hud_num != ohud_num))
   {
@@ -1258,7 +1316,7 @@ int HU_GetArmorColor(int armor, int def)
     result = CR_BLUE;
   else if (plr->armortype == 1)
     result = CR_GREEN;
-  else if (plr->armortype == 0)
+  else
     result = CR_RED;
   }
   else
@@ -2244,13 +2302,13 @@ void SetCrosshairTarget(void)
 
       if (!hudadd_crosshair_scale)
       {
-        crosshair.target_screen_x = winx;
-        crosshair.target_screen_y = SCREENHEIGHT - winy;
+        crosshair.target_screen_x = winx - (crosshair.w / 2);
+        crosshair.target_screen_y = SCREENHEIGHT - winy - (crosshair.h / 2);
       }
       else
       {
-        crosshair.target_screen_x = (winx - params->deltax1) * 320.0f / params->video->width;
-        crosshair.target_screen_y = 200 - (winy - params->deltay1) * 200.0f / params->video->height;
+        crosshair.target_screen_x = (winx - params->deltax1) * 320.0f / params->video->width - (crosshair.w / 2);
+        crosshair.target_screen_y = 200 - (winy - params->deltay1) * 200.0f / params->video->height - (crosshair.h / 2);
       }
     }
   }
@@ -2262,10 +2320,8 @@ void HU_draw_crosshair(void)
 
   crosshair.target_sprite = -1;
 
-  if (!crosshair_nam[hudadd_crosshair] || crosshair.lump == -1 ||
-    custom_message_p->ticks > 0 || automapmode & am_active ||
-    menuactive != mnact_inactive || paused ||
-    plr->readyweapon == wp_chainsaw || plr->readyweapon == wp_fist)
+  if (!crosshair_nam[hudadd_crosshair] || crosshair.lump == -1 || automapmode & am_active ||
+      menuactive != mnact_inactive || paused)
   {
     return;
   }
@@ -2277,18 +2333,20 @@ void HU_draw_crosshair(void)
 
   if (hudadd_crosshair_target || hudadd_crosshair_lock_target)
   {
-    fixed_t slope;
+    fixed_t range, slope;
     angle_t an = plr->mo->angle;
+    ammotype_t ammo = weaponinfo[plr->readyweapon].ammo;
     
     // intercepts overflow guard
     overflows_enabled = false;
-    slope = P_AimLineAttack(plr->mo, an, 16*64*FRACUNIT, 0);
-    if (plr->readyweapon == wp_missile || plr->readyweapon == wp_plasma || plr->readyweapon == wp_bfg)
+    range = (ammo == am_noammo) ? MELEERANGE : 16*64*FRACUNIT;
+    slope = P_AimLineAttack(plr->mo, an, range, 0);
+    if (ammo == am_misl || ammo == am_cell)
     {
       if (!linetarget)
-        slope = P_AimLineAttack(plr->mo, an += 1<<26, 16*64*FRACUNIT, 0);
+        slope = P_AimLineAttack(plr->mo, an += 1<<26, range, 0);
       if (!linetarget)
-        slope = P_AimLineAttack(plr->mo, an -= 2<<26, 16*64*FRACUNIT, 0);
+        slope = P_AimLineAttack(plr->mo, an -= 2<<26, range, 0);
     }
     overflows_enabled = true;
 
@@ -2358,7 +2416,7 @@ void HU_Drawer(void)
   // draw the automap widgets if automap is displayed
   if (automapmode & am_active)
   {
-    if (!(automapmode & am_overlay) || (viewheight != SCREENHEIGHT))//!hud_displayed)
+    if ((!(automapmode & am_overlay) || (viewheight != SCREENHEIGHT)) && !drawTimeSTSwidgets())
     {
       // map title
       HUlib_drawTextLine(&w_title, false);
@@ -2517,10 +2575,27 @@ void HU_Drawer(void)
     }
 
   }
+  // [FG] draw Time/STS widgets above status bar
+  else if (drawTimeSTSwidgets())
+  {
+    HU_MoveHud(false);
+
+    if (realframe)
+    {
+      HU_widget_build_monsec();
+      HU_widget_build_hudadd();
+    }
+    HU_widget_draw_monsec();
+    HU_widget_draw_hudadd();
+  }
 
   //jff 3/4/98 display last to give priority
   HU_Erase(); // jff 4/24/98 Erase current lines before drawing current
               // needed when screen not fullsize
+
+  // Draw crosshair before messages
+  if (hudadd_crosshair)
+    HU_draw_crosshair();
 
   //jff 4/21/98 if setup has disabled message list while active, turn it off
   if (hud_msg_lines<=1)
@@ -2534,15 +2609,27 @@ void HU_Drawer(void)
   if (custom_message_p->ticks > 0)
     HUlib_drawTextLine(&w_centermsg, false);
 
-  if (hudadd_crosshair)
-    HU_draw_crosshair();
-
   // if the message review is enabled show the scrolling message review
   if (hud_msg_lines>1 && message_list)
     HUlib_drawMText(&w_rtext);
 
   // display the interactive buffer for chat entry
   HUlib_drawIText(&w_chat);
+
+#ifdef __vita__
+  // Keep a fixed three-digit width so an older value cannot leave stale
+  // glyphs behind when the measured rate changes.
+  if (gamestate == GS_LEVEL)
+  {
+    sprintf(hud_fpsstr, "FPS:%03d", I_GetFPS());
+    HUlib_clearTextLine(&w_fps);
+    s = hud_fpsstr;
+    while (*s)
+      HUlib_addCharToTextLine(&w_fps, *(s++));
+    HUlib_setTextXCenter(&w_fps);
+    HUlib_drawTextLine(&w_fps, false);
+  }
+#endif
 }
 
 //
@@ -2886,7 +2973,7 @@ dboolean HU_Responder(event_t *ev)
           plr->message = lastmessage;
         }
       }
-      else if (c == key_escape || c == key_escape_alt)        // phares
+      else if (c == key_escape)                               // phares
         chat_on = false;
     }
   }

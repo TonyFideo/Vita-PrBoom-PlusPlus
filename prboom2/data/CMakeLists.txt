@@ -1,21 +1,82 @@
 # PrBoom-Plus WAD creation tool
 
-set(RDATAWAD_SOURCES
-    rd_main.c
-    rd_util.c
-    rd_util.h
-    rd_output.c
-    rd_output.h
-    rd_sound.c
-    rd_sound.h
-    rd_palette.c
-    rd_palette.h
-    rd_graphic.c
-    rd_graphic.h
-)
+if(NOT CMAKE_CROSSCOMPILING)
+    set(RDATAWAD_SOURCES
+        rd_main.c
+        rd_util.c
+        rd_util.h
+        rd_output.c
+        rd_output.h
+        rd_sound.c
+        rd_sound.h
+        rd_palette.c
+        rd_palette.h
+        rd_graphic.c
+        rd_graphic.h
+    )
 
-add_executable(rdatawad ${RDATAWAD_SOURCES})
-target_include_directories(rdatawad PRIVATE ${CMAKE_BINARY_DIR})
+    add_executable(rdatawad ${RDATAWAD_SOURCES})
+    target_include_directories(rdatawad PRIVATE ${CMAKE_BINARY_DIR})
+
+    set(RDATAWAD_COMMAND rdatawad)
+    set(RDATAWAD_DEPENDS rdatawad)
+elseif(VITA)
+    # The Vita toolchain cannot execute a target binary while building the
+    # internal WAD. Build the small WAD generator with a host compiler instead.
+    set(VITA_HOST_CC "" CACHE FILEPATH "Host C compiler used to build rdatawad")
+    if(NOT VITA_HOST_CC)
+        find_program(VITA_HOST_CC
+            NAMES gcc cc clang
+            HINTS
+                "$ENV{MSYS2_ROOT}/ucrt64/bin"
+                "$ENV{MSYS2_ROOT}/mingw64/bin"
+                "C:/msys64/ucrt64/bin"
+                "C:/msys64/mingw64/bin"
+                "C:/devkitPro/msys2/ucrt64/bin"
+                "C:/devkitPro/msys2/mingw64/bin"
+        )
+    endif()
+    if(NOT VITA_HOST_CC)
+        message(FATAL_ERROR
+            "A host C compiler is required to generate prboom-plus.wad. "
+            "Run CMake from MSYS2 or set VITA_HOST_CC to gcc/clang."
+        )
+    endif()
+
+    get_filename_component(VITA_HOST_CC_DIR "${VITA_HOST_CC}" DIRECTORY)
+
+    set(RDATAWAD_HOST_SOURCES
+        "${CMAKE_CURRENT_SOURCE_DIR}/rd_main.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/rd_util.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/rd_output.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/rd_sound.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/rd_palette.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/rd_graphic.c"
+    )
+    # Keep the output name different from the custom target name. This also
+    # works from MSYS2, where host executables do not necessarily use .exe in
+    # their CMake-side path.
+    set(RDATAWAD_HOST "${CMAKE_CURRENT_BINARY_DIR}/rdatawad-host-tool")
+
+    add_custom_command(
+        OUTPUT "${RDATAWAD_HOST}"
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "PATH=${VITA_HOST_CC_DIR}:/usr/bin"
+            "${VITA_HOST_CC}"
+            -std=c99
+            "-I${CMAKE_BINARY_DIR}"
+            "-I${CMAKE_CURRENT_SOURCE_DIR}"
+            ${RDATAWAD_HOST_SOURCES}
+            -o "${RDATAWAD_HOST}"
+        DEPENDS ${RDATAWAD_HOST_SOURCES} "${CMAKE_BINARY_DIR}/config.h"
+        COMMENT "Building host WAD generator"
+        VERBATIM
+    )
+    add_custom_target(rdatawad-host DEPENDS "${RDATAWAD_HOST}")
+
+    set(RDATAWAD_COMMAND "${RDATAWAD_HOST}")
+    set(RDATAWAD_DEPENDS rdatawad-host)
+endif()
 
 
 # PrBoom-Plus internal WAD
@@ -38,6 +99,9 @@ set(LUMPS
     lumps/crblue2.lmp
     lumps/crorange.lmp
     lumps/cryellow.lmp
+    lumps/crblack.lmp
+    lumps/crpurple.lmp
+    lumps/crwhite.lmp
 )
 
 set(COLORMAPS 
@@ -114,6 +178,7 @@ set(GRAPHICS
     graphics/digy.ppm
     graphics/digz.ppm
     graphics/dig45.ppm
+    graphics/dig46.ppm
     graphics/dig47.ppm
     graphics/dig58.ppm
     graphics/dig91.ppm
@@ -358,8 +423,94 @@ set(WAD_CMDLINE
 
 add_custom_command(
     OUTPUT "${WAD_DATA_PATH}"
-    COMMAND rdatawad -I "${CMAKE_CURRENT_SOURCE_DIR}" ${WAD_CMDLINE} -o "${WAD_DATA_PATH}"
-    DEPENDS rdatawad ${WAD_SRC}
+    COMMAND "${RDATAWAD_COMMAND}" -I "${CMAKE_CURRENT_SOURCE_DIR}" ${WAD_CMDLINE} -o "${WAD_DATA_PATH}"
+    DEPENDS ${RDATAWAD_DEPENDS} ${WAD_SRC}
 )
 add_custom_target(prboomwad DEPENDS ${WAD_DATA_PATH})
-install(FILES ${WAD_DATA_PATH} DESTINATION ${DOOMWADDIR} COMPONENT "PrBoom-Plus internal WAD")
+install(FILES ${WAD_DATA_PATH} DESTINATION ${PRBOOMDATADIR} COMPONENT "PrBoom-Plus internal WAD")
+
+if(VITA)
+    # Match the original Vita release layout. doom1.wad is intentionally not
+    # included; it remains optional user-owned game data.
+    set(VITA_DATA_STAGE "${CMAKE_BINARY_DIR}/vita-data")
+    set(VITA_DATA_ZIP "${CMAKE_BINARY_DIR}/data.zip")
+    set(VITA_DATA_CONFIG "${CMAKE_SOURCE_DIR}/data/vita/prboom-plus.cfg")
+    set(VITA_DATA_SOUNDFONT "${CMAKE_SOURCE_DIR}/data/vita/TimGM6mb.sf2"
+        CACHE FILEPATH "Optional default FluidSynth soundfont for data.zip")
+    set(VITA_ZIP_TOOL "" CACHE FILEPATH "ZIP archiver used to create Vita data.zip")
+    if(NOT VITA_ZIP_TOOL)
+        find_program(VITA_ZIP_TOOL
+            NAMES 7z 7z.exe 7zz 7zz.exe
+            HINTS
+                "$ENV{MSYS2_ROOT}/usr/lib/p7zip"
+                "$ENV{MSYS2_ROOT}/usr/bin"
+                "/c/msys64/usr/lib/p7zip"
+                "/c/msys64/usr/bin"
+                "/c/devkitPro/msys2/usr/lib/p7zip"
+                "/c/devkitPro/msys2/usr/bin"
+                "C:/msys64/usr/lib/p7zip"
+                "C:/msys64/usr/bin"
+                "C:/devkitPro/msys2/usr/lib/p7zip"
+                "C:/devkitPro/msys2/usr/bin"
+        )
+    endif()
+    if(NOT VITA_ZIP_TOOL)
+        foreach(VITA_ZIP_CANDIDATE
+            "/c/msys64/usr/lib/p7zip/7z.exe"
+            "/c/msys64/usr/bin/7z.exe"
+            "/c/devkitPro/msys2/usr/lib/p7zip/7z.exe"
+            "/c/devkitPro/msys2/usr/bin/7z.exe"
+        )
+            if(EXISTS "${VITA_ZIP_CANDIDATE}")
+                set(VITA_ZIP_TOOL "${VITA_ZIP_CANDIDATE}")
+                break()
+            endif()
+        endforeach()
+    endif()
+    if(NOT VITA_ZIP_TOOL)
+        message(FATAL_ERROR
+            "A ZIP archiver is required to generate data.zip. "
+            "Install 7-Zip in MSYS2 or set VITA_ZIP_TOOL to 7z."
+        )
+    endif()
+    get_filename_component(VITA_ZIP_TOOL_DIR "${VITA_ZIP_TOOL}" DIRECTORY)
+
+    set(VITA_DATA_ZIP_DEPENDS
+        "${WAD_DATA_PATH}"
+        "${VITA_DATA_CONFIG}"
+    )
+    set(VITA_DATA_ZIP_COMMANDS
+        COMMAND "${CMAKE_COMMAND}" -E remove_directory "${VITA_DATA_STAGE}"
+        COMMAND "${CMAKE_COMMAND}" -E remove -f "${VITA_DATA_ZIP}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${VITA_DATA_STAGE}/data/prboom/iwads"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${VITA_DATA_STAGE}/data/prboom/pwads"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${WAD_DATA_PATH}" "${VITA_DATA_STAGE}/data/prboom/prboom-plus.wad"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${VITA_DATA_CONFIG}" "${VITA_DATA_STAGE}/data/prboom/prboom-plus.cfg"
+    )
+    if(EXISTS "${VITA_DATA_SOUNDFONT}")
+        list(APPEND VITA_DATA_ZIP_DEPENDS "${VITA_DATA_SOUNDFONT}")
+        list(APPEND VITA_DATA_ZIP_COMMANDS
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${VITA_DATA_SOUNDFONT}" "${VITA_DATA_STAGE}/data/prboom/TimGM6mb.sf2"
+        )
+    else()
+        message(STATUS
+            "TimGM6mb.sf2 not found; data.zip will omit the optional FluidSynth soundfont"
+        )
+    endif()
+
+    add_custom_command(
+        OUTPUT "${VITA_DATA_ZIP}"
+        ${VITA_DATA_ZIP_COMMANDS}
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "PATH=${VITA_ZIP_TOOL_DIR}:/usr/bin"
+            "${VITA_ZIP_TOOL}" a -tzip "${VITA_DATA_ZIP}" data
+        WORKING_DIRECTORY "${VITA_DATA_STAGE}"
+        DEPENDS ${VITA_DATA_ZIP_DEPENDS}
+        COMMENT "Packaging Vita data.zip (without doom1.wad)"
+        VERBATIM
+    )
+    add_custom_target(vita-data-zip ALL DEPENDS "${VITA_DATA_ZIP}")
+endif()

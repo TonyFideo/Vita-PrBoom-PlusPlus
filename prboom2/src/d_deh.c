@@ -54,6 +54,8 @@
 // CPhipps - modify to use logical output routine
 #include "lprintf.h"
 
+#include "m_io.h"
+
 #define TRUE 1
 #define FALSE 0
 
@@ -131,6 +133,25 @@ static int dehfgetc(DEHFILE *fp)
 {
   return !fp->lump ? fgetc(fp->f) : fp->size > 0 ?
     fp->size--, *fp->inp++ : EOF;
+}
+
+static long dehftell(DEHFILE *fp)
+{
+  return !fp->lump ? ftell(fp->f) : (fp->inp - fp->lump);
+}
+
+static int dehfseek(DEHFILE *fp, long offset)
+{
+  if (!fp->lump)
+    return fseek(fp->f, offset, SEEK_SET);
+  else
+  {
+    long total = (fp->inp - fp->lump) + fp->size;
+    offset = BETWEEN(0, total, offset);
+    fp->inp = fp->lump + offset;
+    fp->size = total - offset;
+    return 0;
+  }
 }
 
 // haleyjd 9/22/99
@@ -1036,7 +1057,7 @@ typedef struct
 // killough 8/9/98: make DEH_BLOCKMAX self-adjusting
 #define DEH_BLOCKMAX (sizeof deh_blocks/sizeof*deh_blocks)  // size of array
 #define DEH_MAXKEYLEN 32 // as much of any key as we'll look at
-#define DEH_MOBJINFOMAX 25 // number of ints in the mobjinfo_t structure (!)
+#define DEH_MOBJINFOMAX 26 // number of ints in the mobjinfo_t structure (!)
 
 // Put all the block header values, and the function to be called when that
 // one is encountered, in this array:
@@ -1102,6 +1123,7 @@ static const char *deh_mobjinfo[DEH_MOBJINFOMAX] =
   "Bits2",               // .flags
   "Respawn frame",       // .raisestate
   "Dropped item",        // .droppeditem
+  "Blood color",         // .bloodcolor
 };
 
 // Strings that are used to indicate flags ("Bits" in mobjinfo)
@@ -1425,8 +1447,13 @@ void D_BuildBEXTables(void)
       deh_musicnames[i] = strdup(S_music[i].name);
    deh_musicnames[0] = deh_musicnames[NUMMUSIC] = NULL;
 
-   for(i = 1; i < NUMSFX; i++)
-      deh_soundnames[i] = strdup(S_sfx[i].name);
+   for(i = 1; i < NUMSFX; i++) {
+      if (S_sfx[i].name != NULL) {
+         deh_soundnames[i] = strdup(S_sfx[i].name);
+      } else { // This is possible due to how DEHEXTRA has turned S_sfx into a sparse array
+         deh_soundnames[i] = NULL;
+      }
+   }
    deh_soundnames[0] = deh_soundnames[NUMSFX] = NULL;
 
   // ferk: initialize Thing extra properties (keeping vanilla props in info.c)
@@ -1447,6 +1474,20 @@ void D_BuildBEXTables(void)
       break;
       default:
       mobjinfo[i].droppeditem = MT_NULL;
+    }
+
+    // [FG] colored blood and gibs
+    switch (i)
+    {
+      case MT_HEAD:
+      mobjinfo[i].bloodcolor = 3; // Blue
+      break;
+      case MT_BRUISER:
+      case MT_KNIGHT:
+      mobjinfo[i].bloodcolor = 2; // Green
+      break;
+      default:
+      mobjinfo[i].bloodcolor = 0; // Red (normal)
     }
   }
 }
@@ -1473,19 +1514,7 @@ void deh_changeCompTranslucency(void)
   {
     if (!DEH_mobjinfo_bits[predefined_translucency[i]])
     {
-      // Transparent sprites are not visible behind transparent walls in OpenGL.
-      // It needs much work.
-#ifdef GL_DOOM
-      if (V_GetMode() == VID_MODEGL)
-      {
-        // Disabling transparency in OpenGL for original sprites
-        // which are not changed by dehacked, because it's buggy for now.
-        // Global sorting of transparent sprites and walls is needed
-        mobjinfo[predefined_translucency[i]].flags &= ~MF_TRANSLUCENT;
-      }
-      else
-#endif
-      if (comp[comp_translucency]) 
+      if (default_comp[comp_translucency])
         mobjinfo[predefined_translucency[i]].flags &= ~MF_TRANSLUCENT;
       else 
         mobjinfo[predefined_translucency[i]].flags |= MF_TRANSLUCENT;
@@ -1519,6 +1548,40 @@ void deh_applyCompatibility(void)
       mobjinfo[MT_SKULL].flags &= ~(MF_COUNTKILL);
   }
 
+  if (compatibility_level == doom_12_compatibility)
+  {
+      // Spiderdemon is not fullbright when attacking in versions before v1.4
+      states[S_SPID_ATK1].frame &= ~FF_FULLBRIGHT;
+      states[S_SPID_ATK2].frame &= ~FF_FULLBRIGHT;
+      states[S_SPID_ATK3].frame &= ~FF_FULLBRIGHT;
+      states[S_SPID_ATK4].frame &= ~FF_FULLBRIGHT;
+
+      // Powerups are not fullbright in v1.2
+      // Soulsphere fullbright since v1.25s, the rest since v1.4
+      states[S_SOUL].frame &= ~FF_FULLBRIGHT;
+      states[S_SOUL2].frame &= ~FF_FULLBRIGHT;
+      states[S_SOUL3].frame &= ~FF_FULLBRIGHT;
+      states[S_SOUL4].frame &= ~FF_FULLBRIGHT;
+      states[S_SOUL5].frame &= ~FF_FULLBRIGHT;
+      states[S_SOUL6].frame &= ~FF_FULLBRIGHT;
+      states[S_PINV].frame &= ~FF_FULLBRIGHT;
+      states[S_PINV2].frame &= ~FF_FULLBRIGHT;
+      states[S_PINV3].frame &= ~FF_FULLBRIGHT;
+      states[S_PINV4].frame &= ~FF_FULLBRIGHT;
+      states[S_PSTR].frame &= ~FF_FULLBRIGHT;
+      states[S_PINS].frame &= ~FF_FULLBRIGHT;
+      states[S_PINS2].frame &= ~FF_FULLBRIGHT;
+      states[S_PINS3].frame &= ~FF_FULLBRIGHT;
+      states[S_PINS4].frame &= ~FF_FULLBRIGHT;
+      states[S_SUIT].frame &= ~FF_FULLBRIGHT;
+      states[S_PMAP].frame &= ~FF_FULLBRIGHT;
+      states[S_PMAP2].frame &= ~FF_FULLBRIGHT;
+      states[S_PMAP3].frame &= ~FF_FULLBRIGHT;
+      states[S_PMAP4].frame &= ~FF_FULLBRIGHT;
+      states[S_PMAP5].frame &= ~FF_FULLBRIGHT;
+      states[S_PMAP6].frame &= ~FF_FULLBRIGHT;
+  }
+
   deh_changeCompTranslucency();
 }
 
@@ -1538,6 +1601,8 @@ void ProcessDehFile(const char *filename, const char *outfilename, int lumpnum)
   DEHFILE infile, *filein = &infile;    // killough 10/98
   char inbuffer[DEH_BUFFERMAX];  // Place to put the primary infostring
   const char *file_or_lump;
+  static unsigned last_i;
+  static long filepos;
 
   // Open output file if we're writing output
   if (outfilename && *outfilename && !fileout)
@@ -1546,7 +1611,7 @@ void ProcessDehFile(const char *filename, const char *outfilename, int lumpnum)
       if (!strcmp(outfilename, "-"))
         fileout = stdout;
       else
-        if (!(fileout=fopen(outfilename, firstfile ? "wt" : "at")))
+        if (!(fileout=M_fopen(outfilename, firstfile ? "wt" : "at")))
           {
             lprintf(LO_WARN, "Could not open -dehout file %s\n... using stdout.\n",
                    outfilename);
@@ -1559,7 +1624,7 @@ void ProcessDehFile(const char *filename, const char *outfilename, int lumpnum)
 
   if (filename)
     {
-      if (!(infile.f = fopen(filename,"rt")))
+      if (!(infile.f = M_fopen(filename,"rt")))
         {
           lprintf(LO_WARN, "-deh file %s not found\n",filename);
           return;  // should be checked up front anyway
@@ -1571,6 +1636,12 @@ void ProcessDehFile(const char *filename, const char *outfilename, int lumpnum)
     {
       infile.size = W_LumpLength(lumpnum);
       infile.inp = infile.lump = W_CacheLumpNum(lumpnum);
+      // [FG] skip empty DEHACKED lumps
+      if (!infile.inp)
+        {
+          lprintf(LO_WARN, "skipping empty DEHACKED (%d) lump\n",lumpnum);
+          return;
+        }
       filename = lumpinfo[lumpnum].wadfile->name;
       file_or_lump = "lump from";
     }
@@ -1582,12 +1653,12 @@ void ProcessDehFile(const char *filename, const char *outfilename, int lumpnum)
 
   // loop until end of file
 
+  last_i = DEH_BLOCKMAX-1;
+  filepos = 0;
   while (dehfgets(inbuffer,sizeof(inbuffer),filein))
     {
       dboolean match;
       unsigned i;
-      static unsigned last_i = DEH_BLOCKMAX-1;
-      static long filepos = 0;
 
       lfstrip(inbuffer);
       if (fileout) fprintf(fileout,"Line='%s'\n",inbuffer);
@@ -1651,8 +1722,7 @@ void ProcessDehFile(const char *filename, const char *outfilename, int lumpnum)
       else if (last_i >= 10 && last_i < DEH_BLOCKMAX-1) // restrict to BEX style lumps
         { // process that same line again with the last valid block code handler
           i = last_i;
-          if (!filein->lump)
-            fseek(filein->f, filepos, SEEK_SET);
+          dehfseek(filein, filepos);
         }
 
       if (fileout)
@@ -1660,8 +1730,7 @@ void ProcessDehFile(const char *filename, const char *outfilename, int lumpnum)
                 i, deh_blocks[i].key);
       deh_blocks[i].fptr(filein,fileout,inbuffer);  // call function
 
-      if (!filein->lump) // back up line start
-        filepos = ftell(filein->f);
+      filepos = dehftell(filein); // back up line start
     }
 
   if (infile.lump)
@@ -1851,6 +1920,7 @@ static void setMobjInfoValue(int mobjInfoIndex, int keyIndex, uint_64_t value) {
       }
       break;
     case 24: mi->droppeditem = (int)(value-1); return; // make it base zero (deh is 1-based)
+    case 25: mi->bloodcolor = (int)value; return;
     default: return;
   }
 }
@@ -2715,6 +2785,8 @@ static void deh_procText(DEHFILE *fpin, FILE* fpout, char *line)
         // Try sound effects entries - see sounds.c
         for (i=1; i<NUMSFX; i++)
           {
+            // skip empty dummy entries in S_sfx[]
+            if (!S_sfx[i].name) continue;
             // avoid short prefix erroneous match
             if (strlen(S_sfx[i].name) != (size_t)fromlen) continue;
             if (!strnicmp(S_sfx[i].name,inbuffer,fromlen) && !S_sfx_state[i])
@@ -2829,7 +2901,7 @@ static void deh_procStrings(DEHFILE *fpin, FILE* fpout, char *line)
           maxstrlen = strlen(holdstring) + strlen(inbuffer);
           if (fpout) fprintf(fpout,
                              "* increased buffer from to %ld for buffer size %d\n",
-                             maxstrlen,(int)strlen(inbuffer));
+                             (long)maxstrlen,(int)strlen(inbuffer));
           holdstring = realloc(holdstring,maxstrlen*sizeof(*holdstring));
         }
       // concatenate the whole buffer if continuation or the value iffirst
