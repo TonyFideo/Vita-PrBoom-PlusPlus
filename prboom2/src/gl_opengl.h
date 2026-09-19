@@ -44,7 +44,7 @@
 #include <SDL.h>
 #ifdef __vita__
 
-#include <vitaGL/source/vitaGL.h>
+#include <vitaGL.h>
 #include <libtess/glu.h>
 
 // VitaGL's legacy client-array path is used by the original Vita port.
@@ -120,11 +120,18 @@ typedef GLboolean (*PFNGLUNMAPBUFFERARBPROC) (GLenum target);
 #define GL_OPERAND1_ALPHA 0x8599
 #define GL_OPERAND2_ALPHA 0x859A
 #define GL_MULTISAMPLE_ARB 0x809D
+#ifndef GL_DOT3_RGB
 #define GL_DOT3_RGB       0x8740
+#endif
+#ifndef GL_DOT3_RGBA
 #define GL_DOT3_RGBA      0x8741
+#endif
 #define GL_STATIC_DRAW_ARB GL_STATIC_DRAW
 #define GL_TEXTURE0_ARB    GL_TEXTURE0
 #define GL_TEXTURE1_ARB    GL_TEXTURE1
+#ifndef GL_TEXTURE31
+#define GL_TEXTURE31       0x84DF
+#endif
 #define GL_TEXTURE31_ARB   GL_TEXTURE31
 #define GL_CURRENT_COLOR   0x0B00
 #define GL_QUAD_STRIP      0x0008

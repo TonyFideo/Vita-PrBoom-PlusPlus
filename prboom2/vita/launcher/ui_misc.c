@@ -46,6 +46,9 @@ static struct Option misc_opts[] =
     { OPT_INTEGER, "Starting map", .inum = { 0, 99, 1, 0 } },
     { OPT_INTEGER, "Compatibility level", .inum = { -1, 17, 1, -1 } },
     { OPT_BOOLEAN, "Debug logging" },
+    { OPT_BOOLEAN, "Profiling" },
+    { OPT_BOOLEAN, "Advanced logging" },
+    { OPT_BOOLEAN, "Render/VitaGL logging" },
 };
 
 struct Menu ui_menu_misc =
@@ -69,10 +72,6 @@ void UI_MenuMisc_Init(void)
 
 void UI_MenuMisc_Update(void)
 {
-    /* Keep the visible setting enabled even if the generic boolean handler
-     * receives an input event for it. */
-    misc_opts[5].boolean = 1;
-    fs_profiles[ui_profile].logfile = 1;
 }
 
 void UI_MenuMisc_Draw(void)
@@ -82,15 +81,15 @@ void UI_MenuMisc_Draw(void)
 
 void UI_MenuMisc_Reload(void)
 {
-    /* The launcher must always pass -logfile to the game. */
-    fs_profiles[ui_profile].logfile = 1;
-
     misc_opts[0].codevar = fs_profiles[ui_profile].monsters;
     misc_opts[1].codevar = &fs_profiles[ui_profile].record;
     misc_opts[2].codevar = &fs_profiles[ui_profile].skill;
     misc_opts[3].codevar = &fs_profiles[ui_profile].warp;
     misc_opts[4].codevar = &fs_profiles[ui_profile].complevel;
     misc_opts[5].codevar = &fs_profiles[ui_profile].logfile;
+    misc_opts[6].codevar = &fs_profiles[ui_profile].log_profiling;
+    misc_opts[7].codevar = &fs_profiles[ui_profile].log_advanced;
+    misc_opts[8].codevar = &fs_profiles[ui_profile].log_render;
 
     self->opts = misc_opts;
     self->numopts = sizeof(misc_opts) / sizeof(*misc_opts);

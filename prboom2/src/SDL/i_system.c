@@ -73,9 +73,10 @@
 #include <errno.h>
 
 #ifdef __vita__
-#include <vitaGL/source/vitaGL.h>
+#include <vitaGL.h>
 #include <psp2/io/stat.h>
 #include <dirent.h>
+#include "vita_log.h"
 SceUInt32 sceUserMainThreadStackSize = 1 * 1024 * 1024;
 unsigned int _newlib_heap_size_user = 128 * 1024 * 1024;
 #endif
@@ -363,7 +364,7 @@ static const char *VitaDataDir(void)
   {
     char wad[64];
 
-    snprintf(base, sizeof(base), "%s:/data/prboom", drives[i]);
+    snprintf(base, sizeof(base), "%s:/data/PrBoom++", drives[i]);
     snprintf(wad, sizeof(wad), "%s/prboom-plus.wad", base);
     if (!M_access(wad, F_OK))
       return base;
@@ -375,7 +376,7 @@ static const char *VitaDataDir(void)
   {
     DIR *dir;
 
-    snprintf(base, sizeof(base), "%s:/data/prboom", drives[i]);
+    snprintf(base, sizeof(base), "%s:/data/PrBoom++", drives[i]);
     dir = opendir(base);
     if (dir)
     {
@@ -392,6 +393,9 @@ void I_VitaTraceReset(void)
   char path[96];
   FILE *trace;
 
+  if (!VitaLog_IsEnabled(VITA_LOG_BASIC))
+    return;
+
   snprintf(path, sizeof(path), "%s/startup.log", VitaDataDir());
   trace = fopen(path, "w");
   if (trace)
@@ -405,6 +409,9 @@ void I_VitaTrace(const char *message)
 {
   char path[96];
   FILE *trace;
+
+  if (!VitaLog_IsEnabled(VITA_LOG_BASIC))
+    return;
 
   snprintf(path, sizeof(path), "%s/startup.log", VitaDataDir());
   trace = fopen(path, "a");

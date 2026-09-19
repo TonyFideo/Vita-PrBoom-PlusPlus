@@ -13,7 +13,7 @@ cmake -S . -B build-vita -G Ninja \
   -DVITA_HOST_CC=/c/msys64/ucrt64/bin/gcc.exe \
   -DVITA_ZIP_TOOL=/c/msys64/usr/lib/p7zip/7z.exe
 
-cmake --build build-vita --target prboom-plus.vpk-vpk
+cmake --build build-vita --target vita-prboom++.vpk-vpk
 ```
 
 `VITA_HOST_CC` and `VITA_ZIP_TOOL` are host paths. Change them to the paths
@@ -25,7 +25,7 @@ installation.
 
 Outputs:
 
-- `build-vita/src/prboom-plus.vpk` - installable Vita package.
+- `build-vita/src/vita-prboom++.vpk` - installable Vita package.
 - `build-vita/data.zip` - data package containing the internal PrBoom+ data
   and configuration, without `doom1.wad`.
 
@@ -34,7 +34,7 @@ Outputs:
 After installing the VPK, the launcher expects:
 
 ```text
-ux0:/data/prboom/
+ux0:/data/PrBoom++/
 ├── iwads/
 │   └── doom*.wad
 ├── pwads/

@@ -48,6 +48,7 @@
 #include "doomstat.h"
 #include "v_video.h"
 #include "gl_intern.h"
+#include "r_patch.h"
 #include "r_plane.h"
 #include "r_sky.h"
 #include "r_main.h"
@@ -582,6 +583,84 @@ void gld_GetSkyCapColors(void)
   fixedcolormap = fullcolormap;
   frame_fixedcolormap = 0;
 
+#ifdef PRBOOM_VITAGL_MODERN
+  /* Modern VitaGL stores textures in a GPU swizzled layout and removed the
+   * old glGetTexImage/glGetTexLevelParameteriv readback pair.  The sky is
+   * already available as a CPU-side composite patch, so calculate the cap
+   * colours from that source instead of trying to read a swizzled texture. */
+  {
+    const rpatch_t *patch = R_CacheTextureCompositePatchNum(
+      SkyBox.wall.gltexture->index);
+    int x, y, count;
+    unsigned int r, g, b;
+
+    width = patch ? patch->width : 0;
+    height = patch ? patch->height : 0;
+    r = g = b = 0;
+    count = 0;
+
+    if (patch && patch->pixels && width > 0 && height > 0)
+    {
+      const int rows = MIN(30, height);
+      for (y = 0; y < rows; y++)
+      {
+        for (x = 0; x < width; x++)
+        {
+          const byte index = patch->pixels[x * height + y];
+          r += playpal[index * 3 + 0];
+          g += playpal[index * 3 + 1];
+          b += playpal[index * 3 + 2];
+          count++;
+        }
+      }
+    }
+
+    if (count > 0)
+    {
+      ceiling_rgb->r = r / count;
+      ceiling_rgb->g = g / count;
+      ceiling_rgb->b = b / count;
+    }
+    else
+    {
+      ceiling_rgb->r = ceiling_rgb->g = ceiling_rgb->b = 0;
+    }
+
+    if (patch && patch->pixels && height > 30)
+    {
+      const int first_row = height - 30;
+      r = g = b = 0;
+      count = 0;
+      for (y = first_row; y < height; y++)
+      {
+        for (x = 0; x < width; x++)
+        {
+          const byte index = patch->pixels[x * height + y];
+          r += playpal[index * 3 + 0];
+          g += playpal[index * 3 + 1];
+          b += playpal[index * 3 + 2];
+          count++;
+        }
+      }
+      if (count > 0)
+      {
+        floor_rgb->r = r / count;
+        floor_rgb->g = g / count;
+        floor_rgb->b = b / count;
+      }
+      else
+      {
+        *floor_rgb = *ceiling_rgb;
+      }
+    }
+    else
+    {
+      *floor_rgb = *ceiling_rgb;
+    }
+
+    R_UnlockTextureCompositePatchNum(SkyBox.wall.gltexture->index);
+  }
+#else
   gld_BindTexture(SkyBox.wall.gltexture, 0);
 
   glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &width);
@@ -602,6 +681,9 @@ void gld_GetSkyCapColors(void)
     *floor_rgb = *ceiling_rgb;
   }
 
+  free(buffer);
+#endif
+
   colormap = fullcolormap + INVERSECOLORMAP * 256 * sizeof(lighttable_t);
 
   color = V_BestColor(playpal, ceiling_rgb->r, ceiling_rgb->g, ceiling_rgb->b);
@@ -614,11 +696,9 @@ void gld_GetSkyCapColors(void)
   SkyBox.FloorSkyColor[1].g = playpal[colormap[color] * 3 + 1];
   SkyBox.FloorSkyColor[1].b = playpal[colormap[color] * 3 + 2];
 
-  // restorin current colormap
+  // Restore the current colormap for both the desktop and modern VitaGL paths.
   fixedcolormap = fixedcolormap_saved;
   frame_fixedcolormap = frame_fixedcolormap_saved;
-
-  free(buffer);
 }
 
 //-----------------------------------------------------------------------------

@@ -39,7 +39,11 @@ struct Profile
     char skill[2];
     char monsters[2];
     int record;
+    /* Existing option: basic lprintf/startup logging. */
     int logfile;
+    int log_advanced;
+    int log_profiling;
+    int log_render;
 };
 
 extern struct Profile fs_profiles[MAX_PROFILES];

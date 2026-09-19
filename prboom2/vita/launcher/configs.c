@@ -8,7 +8,7 @@
 
 #define MAX_CVARLEN 128
 #define MAX_CVARNAME 128
-#define CONFIG_TEMPLATE "app0:/data/prboom/prboom-plus.cfg"
+#define CONFIG_TEMPLATE "app0:/data/PrBoom++/prboom-plus.cfg"
 
 #define CVARF_HEX 0x01
 

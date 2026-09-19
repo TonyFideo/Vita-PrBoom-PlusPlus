@@ -627,6 +627,19 @@ GLTexture *gld_RegisterTexture(int texture_num, dboolean mipmap, dboolean force)
 
 unsigned char* gld_GetTextureBuffer(GLuint texid, int miplevel, int *width, int *height)
 {
+#ifdef PRBOOM_VITAGL_MODERN
+  /* Modern VitaGL keeps texture storage in the GPU's swizzled layout and no
+   * longer exposes the old glGetTexImage readback helpers.  The only caller
+   * uses this buffer for the optional desktop mip-colour diagnostic, so make
+   * that diagnostic a no-op on Vita instead of linking removed APIs. */
+  (void)texid;
+  (void)miplevel;
+  if (width)
+    *width = 0;
+  if (height)
+    *height = 0;
+  return NULL;
+#else
   int w, h;
   static unsigned char *buf = NULL;
   static int buf_size = 512 * 256 * 4;
@@ -657,6 +670,7 @@ unsigned char* gld_GetTextureBuffer(GLuint texid, int miplevel, int *width, int 
     *height = h;
 
   return buf;
+#endif
 }
 
 // e6y: from Quake3
@@ -703,6 +717,9 @@ byte	mipBlendColors[16][4] =
 
 static void gld_RecolorMipLevels(byte *data)
 {
+#ifdef PRBOOM_VITAGL_MODERN
+  (void)data;
+#else
   //e6y: development aid to see texture mip usage
   if (gl_color_mip_levels)
   {
@@ -723,6 +740,7 @@ static void gld_RecolorMipLevels(byte *data)
         0, GL_RGBA, GL_UNSIGNED_BYTE, buf);
     }
   }
+#endif
 }
 
 void gld_SetTexFilters(GLTexture *gltexture)

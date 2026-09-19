@@ -99,6 +99,10 @@
 
 #include "i_glob.h"
 
+#ifdef __vita__
+#include "vita_log.h"
+#endif
+
 #include "m_io.h"
 
 void GetFirstMap(int *ep, int *map); // Ty 08/29/98 - add "-warp x" functionality
@@ -1627,11 +1631,6 @@ static void D_DoomMainSetup(void)
 {
   int p,slot;
 
-#ifdef __vita__
-  I_VitaTraceReset();
-  I_VitaTrace("D_DoomMainSetup: enter");
-#endif
-
   L_SetupConsoleMasks();
 
   setbuf(stdout,NULL);
@@ -1650,6 +1649,14 @@ static void D_DoomMainSetup(void)
       FindResponseFile();
     } while (rsp_found==true);
   }
+
+#ifdef __vita__
+  /* The launcher options live in the response file.  Resolve them now so
+   * every later subsystem, including VitaGL, sees the selected categories. */
+  VitaLog_Refresh();
+  I_VitaTraceReset();
+  I_VitaTrace("D_DoomMainSetup: enter");
+#endif
 
   // e6y: moved to main()
   /*

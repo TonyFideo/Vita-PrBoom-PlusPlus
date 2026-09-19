@@ -482,18 +482,18 @@ if(VITA)
     set(VITA_DATA_ZIP_COMMANDS
         COMMAND "${CMAKE_COMMAND}" -E remove_directory "${VITA_DATA_STAGE}"
         COMMAND "${CMAKE_COMMAND}" -E remove -f "${VITA_DATA_ZIP}"
-        COMMAND "${CMAKE_COMMAND}" -E make_directory "${VITA_DATA_STAGE}/data/prboom/iwads"
-        COMMAND "${CMAKE_COMMAND}" -E make_directory "${VITA_DATA_STAGE}/data/prboom/pwads"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${VITA_DATA_STAGE}/data/PrBoom++/iwads"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${VITA_DATA_STAGE}/data/PrBoom++/pwads"
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-            "${WAD_DATA_PATH}" "${VITA_DATA_STAGE}/data/prboom/prboom-plus.wad"
+            "${WAD_DATA_PATH}" "${VITA_DATA_STAGE}/data/PrBoom++/prboom-plus.wad"
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-            "${VITA_DATA_CONFIG}" "${VITA_DATA_STAGE}/data/prboom/prboom-plus.cfg"
+            "${VITA_DATA_CONFIG}" "${VITA_DATA_STAGE}/data/PrBoom++/prboom-plus.cfg"
     )
     if(EXISTS "${VITA_DATA_SOUNDFONT}")
         list(APPEND VITA_DATA_ZIP_DEPENDS "${VITA_DATA_SOUNDFONT}")
         list(APPEND VITA_DATA_ZIP_COMMANDS
             COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                "${VITA_DATA_SOUNDFONT}" "${VITA_DATA_STAGE}/data/prboom/TimGM6mb.sf2"
+                "${VITA_DATA_SOUNDFONT}" "${VITA_DATA_STAGE}/data/PrBoom++/TimGM6mb.sf2"
         )
     else()
         message(STATUS
@@ -504,10 +504,14 @@ if(VITA)
     add_custom_command(
         OUTPUT "${VITA_DATA_ZIP}"
         ${VITA_DATA_ZIP_COMMANDS}
-        COMMAND "${CMAKE_COMMAND}" -E env
-            "PATH=${VITA_ZIP_TOOL_DIR}:/usr/bin"
-            "${VITA_ZIP_TOOL}" a -tzip "${VITA_DATA_ZIP}" data
-        WORKING_DIRECTORY "${VITA_DATA_STAGE}"
+        COMMAND "${CMAKE_COMMAND}" -E chdir "${VITA_DATA_STAGE}"
+            "${CMAKE_COMMAND}" -E env
+                "PATH=${VITA_ZIP_TOOL_DIR}:/usr/bin"
+                "${VITA_ZIP_TOOL}" a -tzip "${VITA_DATA_ZIP}" data
+        # The stage directory is deliberately removed by the first command,
+        # so it cannot be the custom command's working directory: the shell
+        # would try to cd there before CMake recreates it.
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
         DEPENDS ${VITA_DATA_ZIP_DEPENDS}
         COMMENT "Packaging Vita data.zip (without doom1.wad)"
         VERBATIM

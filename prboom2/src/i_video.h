@@ -56,6 +56,9 @@
 
 extern int render_vsync;
 extern int render_screen_multiply;
+#ifdef __vita__
+extern int render_screen_filter;
+#endif
 extern int screen_multiply;
 // 2.6.66 configuration fields retained by the legacy Vita video backend.
 extern int exclusive_fullscreen;

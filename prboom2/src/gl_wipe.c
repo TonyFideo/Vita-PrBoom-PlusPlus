@@ -35,6 +35,8 @@
 #include "config.h"
 #endif
 
+#include <stdlib.h>
+
 #include "gl_opengl.h"
 
 #include "v_video.h"
@@ -47,13 +49,17 @@
 static GLuint wipe_scr_start_tex = 0;
 static GLuint wipe_scr_end_tex = 0;
 #ifdef __vita__
-static GLuint wipe_scr_end_fb = 0;
 static unsigned char *scr_buffer = NULL;
+static size_t scr_buffer_size = 0;
 #endif
 
 GLuint CaptureScreenAsTexID(void)
 {
   GLuint id;
+#ifdef __vita__
+  size_t required_size;
+  unsigned char *new_buffer;
+#endif
 
   gld_EnableTexture2D(GL_TEXTURE0_ARB, true);
  
@@ -66,11 +72,24 @@ GLuint CaptureScreenAsTexID(void)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 
 #ifdef __vita__
-  if (!scr_buffer) scr_buffer = malloc(3 * 960 * 544);
-  if (!scr_buffer) return 0;
-  glReadPixels(0, 0, SCREENWIDTH, SCREENHEIGHT, GL_RGB, GL_UNSIGNED_BYTE, scr_buffer);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, SCREENWIDTH, SCREENHEIGHT,
-    0, GL_RGB, GL_UNSIGNED_BYTE, scr_buffer);
+  // VitaGL's default framebuffer readback is native RGBA8888.  Keeping the
+  // capture in that format avoids the RGB transfer/conversion path, which can
+  // leave stale data at the last rows on the modern backend.
+  required_size = (size_t)SCREENWIDTH * (size_t)SCREENHEIGHT * 4u;
+  if (scr_buffer_size < required_size)
+  {
+    new_buffer = realloc(scr_buffer, required_size);
+    if (!new_buffer)
+    {
+      glDeleteTextures(1, &id);
+      return 0;
+    }
+    scr_buffer = new_buffer;
+    scr_buffer_size = required_size;
+  }
+  glReadPixels(0, 0, SCREENWIDTH, SCREENHEIGHT, GL_RGBA, GL_UNSIGNED_BYTE, scr_buffer);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, SCREENWIDTH, SCREENHEIGHT,
+    0, GL_RGBA, GL_UNSIGNED_BYTE, scr_buffer);
 #else
   glTexImage2D(GL_TEXTURE_2D, 0, 3,
     gld_GetTexDimension(SCREENWIDTH), gld_GetTexDimension(SCREENHEIGHT),
@@ -109,18 +128,10 @@ int gld_wipe_doMelt(int ticks, int *y_lookup)
 
   glBegin(GL_TRIANGLE_STRIP);
   {
-#ifdef __vita__
-    // framebuffer texture is flipped
-    glTexCoord2f(fU1, fV2); glVertex2f(0.0f, 0.0f);
-    glTexCoord2f(fU1, fV1); glVertex2f(0.0f, (float)SCREENHEIGHT);
-    glTexCoord2f(fU2, fV2); glVertex2f((float)SCREENWIDTH, 0.0f);
-    glTexCoord2f(fU2, fV1); glVertex2f((float)SCREENWIDTH, (float)SCREENHEIGHT);
-#else
     glTexCoord2f(fU1, fV1); glVertex2f(0.0f, 0.0f);
     glTexCoord2f(fU1, fV2); glVertex2f(0.0f, (float)SCREENHEIGHT);
     glTexCoord2f(fU2, fV1); glVertex2f((float)SCREENWIDTH, 0.0f);
     glTexCoord2f(fU2, fV2); glVertex2f((float)SCREENWIDTH, (float)SCREENHEIGHT);
-#endif
   }
   glEnd();
   
@@ -163,14 +174,6 @@ int gld_wipe_exitMelt(int ticks)
     glDeleteTextures(1, &wipe_scr_start_tex);
     wipe_scr_start_tex = 0;
   }
-#ifdef __vita__
-  if (wipe_scr_end_fb != 0)
-  {
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDeleteFramebuffers(1, &wipe_scr_end_fb);
-    wipe_scr_end_fb = 0;
-  }
-#endif
   if (wipe_scr_end_tex != 0)
   {
     glDeleteTextures(1, &wipe_scr_end_tex);
@@ -184,17 +187,12 @@ int gld_wipe_exitMelt(int ticks)
 
 int gld_wipe_StartScreen(void)
 {
-  wipe_scr_start_tex = CaptureScreenAsTexID();
-
 #ifdef __vita__
-  // Render the end screen into a framebuffer texture for the melt.
-  glGenTextures(1, &wipe_scr_end_tex);
-  glBindTexture(GL_TEXTURE_2D, wipe_scr_end_tex);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, SCREENWIDTH, SCREENHEIGHT,
-    0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
-  glGenFramebuffers(1, &wipe_scr_end_fb);
-  glBindFramebuffer(GL_FRAMEBUFFER, wipe_scr_end_fb);
-  glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, wipe_scr_end_tex, 0);
+  glReadBuffer(GL_BACK);
+#endif
+  wipe_scr_start_tex = CaptureScreenAsTexID();
+#ifdef __vita__
+  glReadBuffer(GL_BACK);
 #endif
 
   return 0;
@@ -203,8 +201,12 @@ int gld_wipe_StartScreen(void)
 int gld_wipe_EndScreen(void)
 {
 #ifdef __vita__
-  I_StopRendering(1);
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  // Capture the newly rendered screen from the same default framebuffer
+  // path used for the start screen.  This avoids the old VitaGL FBO
+  // orientation and scene-lifetime assumptions.
+  glReadBuffer(GL_BACK);
+  glFinish();
+  wipe_scr_end_tex = CaptureScreenAsTexID();
 #else
   glFlush();
   wipe_scr_end_tex = CaptureScreenAsTexID();

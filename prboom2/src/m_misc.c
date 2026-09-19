@@ -1079,8 +1079,16 @@ default_t defaults[] =
    def_bool,ss_stat},
   {"render_wipescreen", {&render_wipescreen},  {1},0,1,
    def_bool,ss_stat},
+#ifdef __vita__
+  {"render_screen_multiply", {&render_screen_multiply},  {1},-2,2,
+#else
   {"render_screen_multiply", {&render_screen_multiply},  {1},1,5,
+#endif
    def_int,ss_stat},
+#ifdef __vita__
+  {"render_screen_filter", {&render_screen_filter},  {0},0,1,
+   def_int,ss_stat},
+#endif
   {"integer_scaling", {&integer_scaling},  {0},0,1,
    def_bool,ss_stat},
   {"render_aspect", {&render_aspect},  {0},0,4,

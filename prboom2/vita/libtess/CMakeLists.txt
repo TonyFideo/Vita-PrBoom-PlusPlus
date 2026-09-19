@@ -16,4 +16,8 @@ set(LIBTESS_SOURCES
 )
 
 add_library(tess ${LIBTESS_SOURCES})
-target_include_directories(tess PRIVATE ${CMAKE_SOURCE_DIR}/vita)
+target_include_directories(tess PRIVATE
+    ${CMAKE_SOURCE_DIR}/vita
+    ${CMAKE_SOURCE_DIR}/vita/vitaGL-modern/source
+    ${CMAKE_SOURCE_DIR}/vita/vitaShaRK/source
+)

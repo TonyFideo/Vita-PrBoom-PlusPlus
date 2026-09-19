@@ -45,6 +45,8 @@ typedef enum                /* Logical output levels */
   LO_FATAL=16,
   LO_DEBUG=32,
   LO_ALWAYS=64,
+  /* Internal category marker for Vita renderer diagnostics. */
+  LO_VITA_RENDER=128,
 } OutputLevels;
 
 #ifndef __GNUC__

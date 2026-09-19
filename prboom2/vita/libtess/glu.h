@@ -36,7 +36,7 @@
 #endif
 
 #ifdef __vita__
-#include <vitaGL/source/vitaGL.h>
+#include <vitaGL.h>
 #else
 #include <GL/gl.h>
 #endif
@@ -297,7 +297,12 @@ GLAPI void GLAPIENTRY gluBeginTrim (GLUnurbs* nurb);
 GLAPI GLint GLAPIENTRY gluBuild1DMipmapLevels (GLenum target, GLint internalFormat, GLsizei width, GLenum format, GLenum type, GLint level, GLint base, GLint max, const void *data);
 GLAPI GLint GLAPIENTRY gluBuild1DMipmaps (GLenum target, GLint internalFormat, GLsizei width, GLenum format, GLenum type, const void *data);
 GLAPI GLint GLAPIENTRY gluBuild2DMipmapLevels (GLenum target, GLint internalFormat, GLsizei width, GLsizei height, GLenum format, GLenum type, GLint level, GLint base, GLint max, const void *data);
+#ifndef __vita__
+/* VitaGL provides this GLU image helper.  Keep the desktop GLU prototype
+ * here, but do not redeclare it with Mesa's GLint return type on VitaGL,
+ * whose ABI uses void. */
 GLAPI GLint GLAPIENTRY gluBuild2DMipmaps (GLenum target, GLint internalFormat, GLsizei width, GLsizei height, GLenum format, GLenum type, const void *data);
+#endif
 GLAPI GLint GLAPIENTRY gluBuild3DMipmapLevels (GLenum target, GLint internalFormat, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, GLint level, GLint base, GLint max, const void *data);
 GLAPI GLint GLAPIENTRY gluBuild3DMipmaps (GLenum target, GLint internalFormat, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const void *data);
 GLAPI GLboolean GLAPIENTRY gluCheckExtension (const GLubyte *extName, const GLubyte *extString);

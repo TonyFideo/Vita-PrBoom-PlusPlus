@@ -55,12 +55,69 @@
 #include "e6y.h"//e6y
 #include "i_capture.h"
 
+#ifdef __vita__
+#include "vita_log.h"
+#endif
+
 #ifndef __vita__
 #define LOGFILE "log.log"
 #endif
 
 int cons_error_mask = -1-LO_INFO; /* all but LO_INFO when redir'd */
 int cons_output_mask = -1;        /* all output enabled */
+
+#ifdef __vita__
+static unsigned int vita_log_flags;
+static dboolean vita_log_flags_valid = false;
+
+static unsigned int VitaLog_ReadCommandLine(void)
+{
+  unsigned int flags = 0;
+
+  if (M_CheckParm("-logfile"))
+    flags |= VITA_LOG_BASIC;
+  if (M_CheckParm("-logadvanced"))
+    flags |= VITA_LOG_ADVANCED;
+  if (M_CheckParm("-logprofiling"))
+    flags |= VITA_LOG_PROFILING;
+  if (M_CheckParm("-logrender"))
+    flags |= VITA_LOG_RENDER;
+
+  return flags;
+}
+
+void VitaLog_Refresh(void)
+{
+  vita_log_flags = VitaLog_ReadCommandLine();
+  vita_log_flags_valid = true;
+}
+
+unsigned int VitaLog_GetFlags(void)
+{
+  /* Before response-file expansion, read the live argv without caching it.
+   * D_DoomMainSetup refreshes and caches the final set afterwards. */
+  if (!vita_log_flags_valid)
+    return VitaLog_ReadCommandLine();
+
+  return vita_log_flags;
+}
+
+int VitaLog_IsEnabled(unsigned int category)
+{
+  return (VitaLog_GetFlags() & category) != 0;
+}
+
+static int VitaLog_FileMessageEnabled(OutputLevels pri)
+{
+  if (pri & LO_VITA_RENDER)
+    return VitaLog_IsEnabled(VITA_LOG_RENDER);
+
+  if (pri & LO_DEBUG)
+    return VitaLog_IsEnabled(VITA_LOG_ADVANCED);
+
+  return VitaLog_IsEnabled(VITA_LOG_BASIC);
+}
+#endif
 
 /* cphipps - enlarged message buffer and made non-static
  * We still have to be careful here, this function can be called after exit
@@ -79,14 +136,13 @@ int lprintf(OutputLevels pri, const char *s, ...)
   va_end(v);
 
 #ifdef __vita__
-  /* The launcher puts -logfile in a response file, which is expanded after
-   * the first startup messages have already passed through lprintf().  Check
-   * lazily so logging starts as soon as that response file is available.
-   * Use the selected Vita data root instead of assuming ux0. */
+  /* Use the selected Vita data root instead of assuming ux0.  Any enabled
+   * category uses this file as its lprintf transport, while the category
+   * filter below decides which messages are actually written. */
   {
     static dboolean log_started = false;
 
-    if (log_started || M_CheckParm("-logfile"))
+    if (VitaLog_FileMessageEnabled(pri))
     {
       char path[96];
       FILE *flog;

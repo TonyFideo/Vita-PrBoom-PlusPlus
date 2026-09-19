@@ -1,0 +1,14 @@
+taihen:
+  attributes: 0
+  version:
+    major: 1
+    minor: 1
+  modules:
+    taihen:
+      syscall: true
+      functions:
+        - taiHookFunctionOffsetForUser
+        - taiGetModuleInfo
+        - taiHookRelease
+        - taiInjectDataForUser
+        - taiInjectRelease

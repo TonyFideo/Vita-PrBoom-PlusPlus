@@ -63,7 +63,7 @@ static const char *FindVitaDataDir(void)
     for (unsigned int i = 0; i < sizeof(drives) / sizeof(*drives); ++i)
     {
         char wad[MAX_FNAME];
-        snprintf(base, sizeof(base), "%s:/data/prboom", drives[i]);
+        snprintf(base, sizeof(base), "%s:/data/PrBoom++", drives[i]);
         snprintf(wad, sizeof(wad), "%s/prboom-plus.wad", base);
         if (fexists(wad)) return base;
     }
@@ -71,11 +71,11 @@ static const char *FindVitaDataDir(void)
     /* Keep the original behavior before data.zip has been installed. */
     for (unsigned int i = 0; i < sizeof(drives) / sizeof(*drives); ++i)
     {
-        snprintf(base, sizeof(base), "%s:/data/prboom", drives[i]);
+        snprintf(base, sizeof(base), "%s:/data/PrBoom++", drives[i]);
         if (isdir(base)) return base;
     }
 
-    snprintf(base, sizeof(base), "ux0:/data/prboom");
+    snprintf(base, sizeof(base), "ux0:/data/PrBoom++");
     return base;
 }
 
@@ -109,9 +109,6 @@ int FS_Init(void)
         fs_profiles[i].monsters[0] = '0';
         fs_profiles[i].skill[0] = '0';
         fs_profiles[i].complevel = -1;
-        /* Keep diagnostics enabled for every profile. This is deliberately
-         * not loaded from or saved to the profile file. */
-        fs_profiles[i].logfile = 1;
         snprintf(fs_profiles[i].joinaddr, MAX_FNAME, "%s:5030", net_my_ip);
         numgames += present;
     }
@@ -187,7 +184,7 @@ int FS_LoadProfiles(void)
     char fname[MAX_FNAME];
     struct Profile prof = { { 0 } };
     char keybuf[512] = { 0 };
-    char value[512] = { 0 };
+    char *value;
     const char *key;
 
     snprintf(fname, sizeof(fname), "%s/profiles.cfg", FS_GetBaseDir());
@@ -203,22 +200,32 @@ int FS_LoadProfiles(void)
 
     memset(fs_profiles, 0, sizeof(fs_profiles));
 
-    while (!feof(f))
+    while (fgets(keybuf, sizeof(keybuf), f))
     {
-        if (fscanf(f, "%511s %511[^\n]\n", keybuf, value) != 2)
+        char *line = keybuf;
+
+        while (*line && isspace((unsigned char)*line)) ++line;
+        if (!*line || *line == '#')
             continue;
 
-        if (keybuf[0] == '#')
+        value = line;
+        while (*value && !isspace((unsigned char)*value)) ++value;
+        if (!*value)
             continue;
 
-        // strip key and value
+        *value++ = '\0';
+        while (*value && isspace((unsigned char)*value)) ++value;
 
-        for (key = keybuf; *key && !isgraph(*key); ++key) ;
-        while (strlen(value) > 0 && !isgraph(value[strlen(value)-1]))
-            value[strlen(value)-1] = '\0';
+        char *end = value + strlen(value);
+        while (end > value && isspace((unsigned char)end[-1])) --end;
+        *end = '\0';
+
+        key = line;
 
         if (!strcmp(key, "profile"))
         {
+            // A new record starts here. Discard any incomplete previous one.
+            memset(&prof, 0, sizeof(prof));
             strncpy(prof.name, value, sizeof(prof.name) - 1);
         }
         else if (!strcmp(key, "iwad"))
@@ -247,6 +254,22 @@ int FS_LoadProfiles(void)
         else if (!strcmp(key, "nodeh"))
         {
             prof.nodeh = (value[0] == '1');
+        }
+        else if (!strcmp(key, "logfile"))
+        {
+            prof.logfile = (value[0] == '1');
+        }
+        else if (!strcmp(key, "logadvanced"))
+        {
+            prof.log_advanced = (value[0] == '1');
+        }
+        else if (!strcmp(key, "logprofiling"))
+        {
+            prof.log_profiling = (value[0] == '1');
+        }
+        else if (!strcmp(key, "logrender"))
+        {
+            prof.log_render = (value[0] == '1');
         }
         else if (!strcmp(key, "end") && !strcmp(value, "profile"))
         {
@@ -290,6 +313,10 @@ int FS_SaveProfiles(void)
         if (fs_profiles[i].episodic) fprintf(f, "  episodic 1\n");
         if (fs_profiles[i].rsp[0]) fprintf(f, "  rsp %s\n", fs_profiles[i].rsp);
         if (fs_profiles[i].nodeh) fprintf(f, "  nodeh 1\n");
+        if (fs_profiles[i].logfile) fprintf(f, "  logfile 1\n");
+        if (fs_profiles[i].log_advanced) fprintf(f, "  logadvanced 1\n");
+        if (fs_profiles[i].log_profiling) fprintf(f, "  logprofiling 1\n");
+        if (fs_profiles[i].log_render) fprintf(f, "  logrender 1\n");
         for (int j = 0; j < MAX_FILES; ++j)
         {
             if (fs_profiles[i].files[j][0])
@@ -389,8 +416,17 @@ static void WriteResponseFile(int profile, const char *fname)
     else if (g->demo[0])
         fprintf(f, "-playdemo %s\n", g->demo);
 
-    /* Always keep the Vita launcher diagnostics enabled. */
-    fprintf(f, "-logfile\n");
+    /* The existing Debug logging option owns the legacy -logfile switch.
+       The other switches are independent categories and are consumed by the
+       Vita runtime without implicitly enabling basic logging. */
+    if (g->logfile)
+        fprintf(f, "-logfile\n");
+    if (g->log_advanced)
+        fprintf(f, "-logadvanced\n");
+    if (g->log_profiling)
+        fprintf(f, "-logprofiling\n");
+    if (g->log_render)
+        fprintf(f, "-logrender\n");
 
     fclose(f);
 }

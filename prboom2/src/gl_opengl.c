@@ -773,11 +773,13 @@ void gld_glDrawArrays(GLenum mode, GLint first, GLsizei count)
   if (vtx_arrays[0].enabled)
   {
     glEnableClientState(GL_VERTEX_ARRAY);
-    vglIndexPointerImmediate();
+    // Modern VitaGL uses its progressive default index buffer for the
+    // glDrawArrays-compatible legacy bridge.
+    vglIndexPointerDefault();
     vglVertexPointer(vtx_arrays[0].size, vtx_arrays[0].type,
       vtx_arrays[0].stride, count,
       vtx_arrays[0].ptr + first * vtx_arrays[0].stride);
-    vglDrawObjects(mode, count, GL_TRUE);
+    vglDrawObjects(mode, count);
     glDisableClientState(GL_VERTEX_ARRAY);
   }
 

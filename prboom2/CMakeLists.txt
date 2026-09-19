@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0)
 
-project("PrBoom-Plus"
+project("Vita-PrBoom-PlusPlus"
     VERSION 2.6.66
     HOMEPAGE_URL "https://github.com/coelckers/prboom-plus")
 
@@ -46,8 +46,10 @@ set(PACKAGE_STRING "${PROJECT_NAME} ${PROJECT_VERSION}")
 # Vita things
 if(VITA)
     include("${VITASDK}/share/vita.cmake")
-    set(VITA_TITLEID "FGS000667")
-    set(VITA_NAME "PrBoom Plus")
+    set(VITA_TITLEID "PBR002666")
+    set(VITA_NAME "Vita-PrBoom++")
+    # VitaSDK requires the Vita version field to use the ##.## format.
+    set(VITA_VERSION "01.00")
 endif()
 
 include(CheckSymbolExists)
@@ -196,18 +198,81 @@ if(WITH_ALSA AND NOT VITA)
     endif()
 endif()
 
+# Keep the temporary Vita diagnostic instrumentation enabled while the modern
+# VitaGL migration is being validated. It can be disabled for a release build
+# with -DVITA_PRBOOM_DIAGNOSTICS=OFF.
+option(VITA_PRBOOM_DIAGNOSTICS "Log Vita GL scene and WAD rendering diagnostics" ON)
+
 if(VITA)
-    # vitaGL is required and is present as a submodule, so make a target for it
-    set(VITAGL_LIBRARY ${CMAKE_CURRENT_SOURCE_DIR}/vita/vitaGL/libvitaGL.a)
-    add_custom_target(build_vitaGL ALL 
-                   COMMAND make HAVE_SBRK=1 NO_DEBUG=1
-                   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/vita/vitaGL
+    # The modern VitaGL tree is kept beside the old texture_matrix fork.  The
+    # latter remains available as a reference, but must not be selected by the
+    # build of this migration branch.
+    set(VITAGL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vita/vitaGL-modern)
+    set(VITASHARK_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vita/vitaShaRK)
+    set(VITAGL_LIBRARY ${VITAGL_DIR}/libvitaGL.a)
+    set(VITASHARK_LIBRARY ${VITASHARK_DIR}/libvitashark.a)
+
+    # vitaShaRK is built locally so this test tree does not install anything
+    # into the user's global VitaSDK.  Its header also supplies the dependency
+    # required by the modern VitaGL header.
+    add_custom_target(build_vitaShaRK ALL
+                   COMMAND make
+                   WORKING_DIRECTORY ${VITASHARK_DIR}
+                   BYPRODUCTS ${VITASHARK_LIBRARY}
+                   COMMENT "Building local vitaShaRK")
+    add_library(vitaShaRK STATIC IMPORTED GLOBAL)
+    set_target_properties(vitaShaRK PROPERTIES
+        IMPORTED_LOCATION "${VITASHARK_LIBRARY}")
+    add_dependencies(vitaShaRK build_vitaShaRK)
+
+    # ENABLE_LEGACY_PIPELINE is required by PrBoom+'s client-array bridge.
+    # Keep compiler diagnostics enabled while this migration is being tested.
+    # Vita3K does not support the modern VitaGL splashscreen's secondary GXM
+    # context. Disable it for this migration build; the main rendering
+    # context remains unchanged.
+    set(VITA_GL_DIAGNOSTICS_ARG)
+    if(VITA_PRBOOM_DIAGNOSTICS)
+        set(VITA_GL_DIAGNOSTICS_ARG VITA_GL_DIAGNOSTICS=1)
+    endif()
+    add_custom_target(build_vitaGL ALL
+                   COMMAND make ENABLE_LEGACY_PIPELINE=1 HAVE_SHARK_LOG=1 LOG_ERRORS=1 HAVE_PROFILING=1 ${VITA_GL_DIAGNOSTICS_ARG} NO_SPLASHSCREEN=1 NO_TILE_CLIPPER=1
+                   WORKING_DIRECTORY ${VITAGL_DIR}
                    BYPRODUCTS ${VITAGL_LIBRARY}
-                   COMMENT "Original vitaGL makefile target")
-    add_library(vitaGL STATIC IMPORTED)
-    set_property(TARGET vitaGL APPEND PROPERTY IMPORTED_CONFIGURATIONS NOCONFIG)
-    set_target_properties(vitaGL PROPERTIES IMPORTED_LOCATION_NOCONFIG "${VITAGL_LIBRARY}")
+                   DEPENDS build_vitaShaRK
+                   COMMENT "Building modern VitaGL")
+    add_library(vitaGL STATIC IMPORTED GLOBAL)
+    set_target_properties(vitaGL PROPERTIES
+        IMPORTED_LOCATION "${VITAGL_LIBRARY}")
     add_dependencies(vitaGL build_vitaGL)
+
+    # SceShaccCgExt and taihen_stub are required by vitaShaRK at final link
+    # time.  Prefer explicit local paths; otherwise fall back to libraries
+    # installed in VitaSDK.  This keeps the dependency visible instead of
+    # silently switching back to the old VitaGL backend.
+    set(VITA_SCE_SHACCCG_EXT_LIBRARY "" CACHE FILEPATH
+        "Path to libSceShaccCgExt.a (or an installed SceShaccCgExt library)")
+    set(VITA_TAIHEN_STUB_LIBRARY "" CACHE FILEPATH
+        "Path to libtaihen_stub.a (or an installed taihen_stub library)")
+    if(NOT VITA_SCE_SHACCCG_EXT_LIBRARY)
+        find_library(VITA_SCE_SHACCCG_EXT_LIBRARY
+            NAMES SceShaccCgExt
+            PATHS ${VITASDK}/arm-vita-eabi/lib
+            NO_DEFAULT_PATH)
+    endif()
+    if(NOT VITA_TAIHEN_STUB_LIBRARY)
+        find_library(VITA_TAIHEN_STUB_LIBRARY
+            NAMES taihen_stub
+            PATHS ${VITASDK}/arm-vita-eabi/lib
+            NO_DEFAULT_PATH)
+    endif()
+    if(NOT VITA_SCE_SHACCCG_EXT_LIBRARY)
+        set(VITA_SCE_SHACCCG_EXT_LIBRARY SceShaccCgExt)
+        message(STATUS "SceShaccCgExt not found locally; final link expects an installed SceShaccCgExt library")
+    endif()
+    if(NOT VITA_TAIHEN_STUB_LIBRARY)
+        set(VITA_TAIHEN_STUB_LIBRARY taihen_stub)
+        message(STATUS "taihen_stub not found locally; final link expects an installed taihen_stub library")
+    endif()
 endif()
 
 set(CMAKE_REQUIRED_INCLUDES_PREV ${CMAKE_REQUIRED_INCLUDES})

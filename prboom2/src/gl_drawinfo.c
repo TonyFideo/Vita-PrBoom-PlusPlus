@@ -38,7 +38,26 @@
 #include "gl_intern.h"
 #include "lprintf.h"
 
+#ifdef PRBOOM_VITA_DIAGNOSTICS
+#include "vita_log.h"
+#endif
+
 GLDrawInfo gld_drawinfo;
+
+#ifdef PRBOOM_VITA_DIAGNOSTICS
+static unsigned int vita_diag_drawinfo_alloc_failures;
+
+static void vita_diag_drawinfo_alloc_failure(const char *stage, size_t size)
+{
+  if (!VitaLog_IsEnabled(VITA_LOG_RENDER))
+    return;
+
+  vita_diag_drawinfo_alloc_failures++;
+  lprintf(LO_DEBUG | LO_VITA_RENDER,
+    "[PRBOOM-VITA-DIAG] drawinfo allocation failed: stage=%s bytes=%lu failures=%u\n",
+    stage, (unsigned long)size, vita_diag_drawinfo_alloc_failures);
+}
+#endif
 
 //
 // gld_FreeDrawInfo
@@ -94,15 +113,36 @@ void gld_ResetDrawInfo(void)
 //
 // gld_AddDrawRange
 //
-static void gld_AddDrawRange(int size)
+static dboolean gld_AddDrawRange(int size)
 {
-  gld_drawinfo.maxsize++;
-  gld_drawinfo.data = realloc(gld_drawinfo.data, 
-    gld_drawinfo.maxsize * sizeof(gld_drawinfo.data[0]));
+  int newmaxsize = gld_drawinfo.maxsize + 1;
+  GLDrawDataItem_t *data = realloc(gld_drawinfo.data,
+    newmaxsize * sizeof(gld_drawinfo.data[0]));
 
-  gld_drawinfo.data[gld_drawinfo.size].maxsize = size;
-  gld_drawinfo.data[gld_drawinfo.size].data = malloc(size);
-  gld_drawinfo.data[gld_drawinfo.size].size = 0;
+  if (!data)
+  {
+#ifdef PRBOOM_VITA_DIAGNOSTICS
+    vita_diag_drawinfo_alloc_failure("draw-range table", newmaxsize * sizeof(gld_drawinfo.data[0]));
+#endif
+    return false;
+  }
+
+  gld_drawinfo.data = data;
+  gld_drawinfo.data[gld_drawinfo.maxsize].data = malloc(size);
+  if (!gld_drawinfo.data[gld_drawinfo.maxsize].data)
+  {
+    gld_drawinfo.data[gld_drawinfo.maxsize].maxsize = 0;
+    gld_drawinfo.data[gld_drawinfo.maxsize].size = 0;
+#ifdef PRBOOM_VITA_DIAGNOSTICS
+    vita_diag_drawinfo_alloc_failure("draw-range data", size);
+#endif
+    return false;
+  }
+
+  gld_drawinfo.data[gld_drawinfo.maxsize].maxsize = size;
+  gld_drawinfo.data[gld_drawinfo.maxsize].size = 0;
+  gld_drawinfo.maxsize = newmaxsize;
+  return true;
 }
 
 //
@@ -126,6 +166,10 @@ void gld_AddDrawItem(GLDrawItemType itemtype, void *itemdata)
     SIZEOF8(GLHealthBar)
   };
 
+  if (itemtype <= GLDIT_NONE || itemtype >= GLDIT_TYPES)
+  {
+    I_Error("gld_AddDrawItem: unknown GLDrawItemType %d", itemtype);
+  }
   itemsize = itemsizes[itemtype];
   if (itemsize == 0)
   {
@@ -134,18 +178,27 @@ void gld_AddDrawItem(GLDrawItemType itemtype, void *itemdata)
 
   if (gld_drawinfo.maxsize == 0)
   {
-    gld_AddDrawRange(NEWSIZE);
+    if (!gld_AddDrawRange(NEWSIZE))
+      return;
   }
 
-  if (gld_drawinfo.data[gld_drawinfo.size].size + itemsize >=
+  if (!gld_drawinfo.data[gld_drawinfo.size].data ||
+      gld_drawinfo.data[gld_drawinfo.size].size + itemsize >=
     gld_drawinfo.data[gld_drawinfo.size].maxsize)
   {
     gld_drawinfo.size++;
     if (gld_drawinfo.size >= gld_drawinfo.maxsize)
     {
-      gld_AddDrawRange(NEWSIZE);
+      if (!gld_AddDrawRange(NEWSIZE))
+      {
+        gld_drawinfo.size--;
+        return;
+      }
     }
   }
+
+  if (!gld_drawinfo.data[gld_drawinfo.size].data)
+    return;
 
   item_p = gld_drawinfo.data[gld_drawinfo.size].data +
     gld_drawinfo.data[gld_drawinfo.size].size;
@@ -156,10 +209,19 @@ void gld_AddDrawItem(GLDrawItemType itemtype, void *itemdata)
 
   if (gld_drawinfo.num_items[itemtype] >= gld_drawinfo.max_items[itemtype])
   {
-    gld_drawinfo.max_items[itemtype] += 64;
-    gld_drawinfo.items[itemtype] = realloc(
+    int newmaxitems = gld_drawinfo.max_items[itemtype] + 64;
+    GLDrawItem *items = realloc(
       gld_drawinfo.items[itemtype],
-      gld_drawinfo.max_items[itemtype] * sizeof(gld_drawinfo.items[0][0]));
+      newmaxitems * sizeof(gld_drawinfo.items[0][0]));
+    if (!items)
+    {
+#ifdef PRBOOM_VITA_DIAGNOSTICS
+      vita_diag_drawinfo_alloc_failure("draw-item table", newmaxitems * sizeof(gld_drawinfo.items[0][0]));
+#endif
+      return;
+    }
+    gld_drawinfo.items[itemtype] = items;
+    gld_drawinfo.max_items[itemtype] = newmaxitems;
   }
 
   gld_drawinfo.items[itemtype][gld_drawinfo.num_items[itemtype]].item.item = item_p;

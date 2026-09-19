@@ -56,7 +56,7 @@
 #endif
 
 #ifdef __vita__
-#include <vitaGL/source/vitaGL.h>
+#include <vitaGL.h>
 #endif
 
 #include "m_argv.h"
@@ -119,6 +119,9 @@ int exclusive_fullscreen;
 int render_vsync;
 int screen_multiply;
 int render_screen_multiply;
+#ifdef __vita__
+int render_screen_filter;
+#endif
 int integer_scaling;
 int vanilla_keymap;
 SDL_Surface *screen;
@@ -569,9 +572,6 @@ void I_StartRendering (void)
   if (!in_render_frame)
   {
     in_render_frame = 1;
-#ifdef __vita__
-    vglStartRendering();
-#endif
   }
 }
 
@@ -582,10 +582,7 @@ void I_StopRendering(int wait)
 {
 #ifdef __vita__
   if (in_render_frame)
-  {
     in_render_frame = 0;
-    vglStopRendering();
-  }
 #endif
 #ifdef GL_DOOM
   if (wait)
@@ -656,6 +653,10 @@ void I_FinishUpdate (void)
   if (V_GetMode() == VID_MODEGL) {
     // proff 04/05/2000: swap OpenGL buffers
     gld_Finish();
+#ifdef __vita__
+    // Modern VitaGL owns scene begin/end and display-queue submission.
+    vglSwapBuffers(GL_FALSE);
+#endif
     I_StopRendering(0);
     return;
   }
@@ -721,6 +722,9 @@ void I_FinishUpdate (void)
     glVertex3f(dst_rect.x, dst_rect.y + dst_rect.h, 0.f);
   glEnd();
 
+#ifdef __vita__
+  vglSwapBuffers(GL_FALSE);
+#endif
   I_StopRendering(0);
 #else
   // Update the intermediate texture with the contents of the RGBA buffer.
@@ -1024,16 +1028,19 @@ void I_CalculateRes(int width, int height)
 // GLBoom will try to set the closest supported resolution 
 // if the requested mode can't be set correctly.
 // For example glboom.exe -geom 1025x768 -nowindow will set 1024x768.
-// It affects only fullscreen modes.
+  // It affects only fullscreen modes.
   if (V_GetMode() == VID_MODEGL) {
 #ifdef __vita__
-    // always run in max res in GL mode
+    // VitaGL presents through the native 960x544 framebuffer.  Do not use
+    // the launcher resolution as an internal OpenGL render size.
     width = DEFAULT_SCREEN_W;
     height = DEFAULT_SCREEN_H;
 #endif
     if ( desired_fullscreen )
     {
+#ifndef __vita__
       I_ClosestResolution(&width, &height);
+#endif
     }
     SCREENWIDTH = width;
     SCREENHEIGHT = height;
@@ -1415,13 +1422,6 @@ void I_UpdateVideoMode(void)
     gld_MultisamplingInit();
 
 #ifdef __vita__
-    // only use VRAM in GL mode because transfering textures every frame
-    // is fucking slow
-    vglUseVram(GL_TRUE);
-
-    // allocate enough vertices for more than one quad
-    vglSetImmediateBufferSize(32768);
-
     glClearColor(0, 0, 0, 0);
 
     // clear matrices possibly stuck there from previous usage of sw modes
@@ -1478,9 +1478,6 @@ void I_UpdateVideoMode(void)
       SDL_FillRect(buffer, NULL, 0);
     }
 
-    // we only need enough for 1 quad, but allocate a bit more just in case
-    vglSetImmediateBufferSize(256);
-
     // we're gonna be drawing fullscreen quads, so set normal orthographic projection
     glClearColor(0, 0, 0, 0);
     glMatrixMode(GL_PROJECTION);
@@ -1517,8 +1514,10 @@ void I_UpdateVideoMode(void)
     // generate frame texture and fill it with black (have to do it so vitaGL would allocate it)
     glGenTextures(1, &sw_texture);
     glBindTexture(GL_TEXTURE_2D, sw_texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                    render_screen_filter ? GL_LINEAR : GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
+                    render_screen_filter ? GL_LINEAR : GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, sw_texfmt, SCREENWIDTH, SCREENHEIGHT, 0, sw_texfmt, sw_textype, screen->pixels);
 
     // get data pointer so we can just memcpy later

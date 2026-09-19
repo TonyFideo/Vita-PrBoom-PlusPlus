@@ -308,6 +308,30 @@ static void OptClear(struct Option *opt)
     }
 }
 
+static int OptIsVisible(struct Menu *menu, int index)
+{
+    struct Option *opt = menu->opts + index;
+    return !opt->visible || opt->visible();
+}
+
+static void OptSelectNext(struct Menu *menu, int dir)
+{
+    int index = menu->sel;
+
+    for (int count = 0; count < menu->numopts; ++count)
+    {
+        index += dir;
+        if (index < 0) index = menu->numopts - 1;
+        else if (index >= menu->numopts) index = 0;
+
+        if (OptIsVisible(menu, index))
+        {
+            menu->sel = index;
+            return;
+        }
+    }
+}
+
 static void OptsUpdate(struct Menu *menu)
 {
     struct Option *opts = menu->opts;
@@ -315,13 +339,11 @@ static void OptsUpdate(struct Menu *menu)
 
     if (IN_ButtonPressed(B_DDOWN))
     {
-        menu->sel++;
-        if (menu->sel >= numopts) menu->sel = 0;
+        OptSelectNext(menu, 1);
     }
     else if (IN_ButtonPressed(B_DUP))
     {
-        menu->sel--;
-        if (menu->sel < 0) menu->sel = numopts - 1;
+        OptSelectNext(menu, -1);
     }
 
     if (menu->sel < menu->scroll)
@@ -411,6 +433,8 @@ static void OptsDraw(struct Menu *menu)
     int y = 160;
     for (int i = scroll; i < numopts && i < stop; ++i)
     {
+        if (!OptIsVisible(menu, i))
+            continue;
         OptDraw(opts + i, 160, y, i == sel);
         y += 24;
     }

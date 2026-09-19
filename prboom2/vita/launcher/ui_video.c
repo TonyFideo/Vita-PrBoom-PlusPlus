@@ -30,9 +30,15 @@ static const char *resolutions[] =
 static const char *scale_labels[] =
 {
     "Keep aspect", "Integer scaling", "Fit to screen",
-    "None", "2x", "3x", "4x"
+    "None", "2x"
 };
-static const char *scale_values[] = { "-2", "-1", "0", "1", "2", "3", "4" };
+static const char *scale_values[] = { "-2", "-1", "0", "1", "2" };
+
+static const char *scale_filter_labels[] =
+{
+    "Nearest", "Linear"
+};
+static const char *scale_filter_values[] = { "0", "1" };
 
 static const char *glsky_labels[] = { "Auto", "None", "Flat", "Dome" };
 static const char *glsky_values[] = { "0", "1", "4", "3" };
@@ -53,7 +59,7 @@ static struct Option video_opts[] =
     },
     {
         OPT_CHOICE,
-        "Software resolution",
+        "Resolution",
         "screen_resolution", NULL,
         .choice =
         {
@@ -63,12 +69,22 @@ static struct Option video_opts[] =
     },
     {
         OPT_CHOICE,
-        "Software scaling",
+        "Scaling filter",
+        "render_screen_filter", NULL,
+        .choice =
+        {
+            scale_filter_labels, scale_filter_values,
+            2, 0,
+        },
+    },
+    {
+        OPT_CHOICE,
+        "Scaling",
         "render_screen_multiply", NULL,
         .choice =
         {
             scale_labels, scale_values,
-            7, 1,
+            5, 1,
         },
     },
     {
@@ -106,9 +122,20 @@ struct Menu ui_menu_video =
 
 static struct Menu *self = &ui_menu_video;
 
+static int UI_MenuVideo_ResolutionVisible(void)
+{
+    return video_opts[0].choice.val != 3;
+}
+
+static int UI_MenuVideo_ScalingFilterVisible(void)
+{
+    return video_opts[0].choice.val != 3;
+}
+
 void UI_MenuVideo_Init(void)
 {
-
+    video_opts[1].visible = UI_MenuVideo_ResolutionVisible;
+    video_opts[2].visible = UI_MenuVideo_ScalingFilterVisible;
 }
 
 void UI_MenuVideo_Update(void)

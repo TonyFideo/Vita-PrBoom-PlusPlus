@@ -79,6 +79,8 @@ struct Option
             char val[MAX_STROPT];
         } file;
     };
+
+    int (*visible)(void);
 };
 
 struct Menu

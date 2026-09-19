@@ -92,6 +92,12 @@ int flats_detail_display_list_size = 0;
 
 int gl_finish = 1;
 
+#ifdef PRBOOM_VITA_DIAGNOSTICS
+#include "vita_log.h"
+static unsigned int vita_diag_scene_serial;
+static dboolean vita_diag_scene_trace;
+#endif
+
 // e6y
 // This variables toggles the use of a trick to prevent the clearning of the 
 // z-buffer between frames. When this variable is set to "1", the game will not 
@@ -1337,6 +1343,13 @@ void gld_ProcessExtraAlpha(void)
     glEnable(GL_ALPHA_TEST);
 #ifndef __vita__
     glColor4f(current_color[0], current_color[1], current_color[2], current_color[3]);
+#else
+    /*
+     * VitaGL has no reliable GL_CURRENT_COLOR readback here.  The flash
+     * quad is drawn after the border and HUD, so leaving its color active
+     * would tint the border tiles on the next frame.
+     */
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 #endif
   }
 }
@@ -1359,7 +1372,16 @@ static void gld_InvertScene(void)
 
 void gld_EndDrawScene(void)
 {
+#ifdef PRBOOM_VITA_DIAGNOSTICS
+  if (vita_diag_scene_trace)
+    lprintf(LO_DEBUG | LO_VITA_RENDER, "[PRBOOM-VITA-DIAG] scene=%u stage=end_scene begin\n", vita_diag_scene_serial);
+#endif
   glDisable(GL_POLYGON_SMOOTH);
+
+#ifdef PRBOOM_VITA_DIAGNOSTICS
+  if (vita_diag_scene_trace)
+    lprintf(LO_DEBUG | LO_VITA_RENDER, "[PRBOOM-VITA-DIAG] scene=%u stage=after_polygon_smooth_disable\n", vita_diag_scene_serial);
+#endif
 
   glViewport(0, 0, SCREENWIDTH, SCREENHEIGHT);
   gl_EnableFog(false);
@@ -1370,6 +1392,11 @@ void gld_EndDrawScene(void)
     glsl_SetActiveShader(sh_main);
     R_DrawPlayerSprites();
     glsl_SetActiveShader(NULL);
+
+#ifdef PRBOOM_VITA_DIAGNOSTICS
+    if (vita_diag_scene_trace)
+      lprintf(LO_DEBUG | LO_VITA_RENDER, "[PRBOOM-VITA-DIAG] scene=%u stage=player_sprites_done\n", vita_diag_scene_serial);
+#endif
   }
 
   // e6y
@@ -1453,6 +1480,11 @@ void gld_EndDrawScene(void)
   glDisable(GL_ALPHA_TEST);
   if (gl_shared_texture_palette)
     glDisable(GL_SHARED_TEXTURE_PALETTE_EXT);
+
+#ifdef PRBOOM_VITA_DIAGNOSTICS
+  if (vita_diag_scene_trace)
+    lprintf(LO_DEBUG | LO_VITA_RENDER, "[PRBOOM-VITA-DIAG] scene=%u stage=end_scene done\n", vita_diag_scene_serial);
+#endif
 }
 
 static void gld_AddDrawWallItem(GLDrawItemType itemtype, void *itemdata)
@@ -3063,6 +3095,29 @@ void gld_DrawScene(player_t *player)
   int i;
   int skybox;
 
+#ifdef PRBOOM_VITA_DIAGNOSTICS
+  vita_diag_scene_serial++;
+  vita_diag_scene_trace = VitaLog_IsEnabled(VITA_LOG_RENDER) &&
+                          (vita_diag_scene_serial <= 12 ||
+                           (vita_diag_scene_serial % 30) == 0);
+  if (vita_diag_scene_trace)
+  {
+    lprintf(LO_DEBUG | LO_VITA_RENDER,
+      "[PRBOOM-VITA-DIAG] scene=%u begin episode=%d map=%d gametic=%d leveltime=%d floor=%d ceiling=%d wall=%d mwall=%d fwall=%d swall=%d sprite=%d tsprite=%d twall=%d asprite=%d\n",
+      vita_diag_scene_serial, gameepisode, gamemap, gametic, leveltime,
+      gld_drawinfo.num_items[GLDIT_FLOOR],
+      gld_drawinfo.num_items[GLDIT_CEILING],
+      gld_drawinfo.num_items[GLDIT_WALL],
+      gld_drawinfo.num_items[GLDIT_MWALL],
+      gld_drawinfo.num_items[GLDIT_FWALL],
+      gld_drawinfo.num_items[GLDIT_SWALL],
+      gld_drawinfo.num_items[GLDIT_SPRITE],
+      gld_drawinfo.num_items[GLDIT_TSPRITE],
+      gld_drawinfo.num_items[GLDIT_TWALL],
+      gld_drawinfo.num_items[GLDIT_ASPRITE]);
+  }
+#endif
+
   //e6y: must call it twice for correct initialisation
   glEnable(GL_ALPHA_TEST);
 
@@ -3108,6 +3163,11 @@ void gld_DrawScene(player_t *player)
     }
   }
 
+#ifdef PRBOOM_VITA_DIAGNOSTICS
+  if (vita_diag_scene_trace)
+    lprintf(LO_DEBUG | LO_VITA_RENDER, "[PRBOOM-VITA-DIAG] scene=%u stage=opaque begin\n", vita_diag_scene_serial);
+#endif
+
 #if defined(USE_VERTEX_ARRAYS) || defined(USE_VBO)
   if (!gl_use_display_lists)
   {
@@ -3147,6 +3207,10 @@ void gld_DrawScene(player_t *player)
     gld_SetFog(gld_drawinfo.items[GLDIT_FLOOR][i].item.flat->fogdensity);
     gld_DrawFlat(gld_drawinfo.items[GLDIT_FLOOR][i].item.flat);
   }
+#ifdef PRBOOM_VITA_DIAGNOSTICS
+  if (vita_diag_scene_trace)
+    lprintf(LO_DEBUG | LO_VITA_RENDER, "[PRBOOM-VITA-DIAG] scene=%u stage=floors done\n", vita_diag_scene_serial);
+#endif
 
   // ceilings
   glCullFace(GL_BACK);
@@ -3156,6 +3220,10 @@ void gld_DrawScene(player_t *player)
     gld_SetFog(gld_drawinfo.items[GLDIT_CEILING][i].item.flat->fogdensity);
     gld_DrawFlat(gld_drawinfo.items[GLDIT_CEILING][i].item.flat);
   }
+#ifdef PRBOOM_VITA_DIAGNOSTICS
+  if (vita_diag_scene_trace)
+    lprintf(LO_DEBUG | LO_VITA_RENDER, "[PRBOOM-VITA-DIAG] scene=%u stage=ceilings done\n", vita_diag_scene_serial);
+#endif
 
   // disable backside removing
   glDisable(GL_CULL_FACE);
@@ -3170,6 +3238,10 @@ void gld_DrawScene(player_t *player)
     gld_SetFog(gld_drawinfo.items[GLDIT_WALL][i].item.wall->fogdensity);
     gld_ProcessWall(gld_drawinfo.items[GLDIT_WALL][i].item.wall);
   }
+#ifdef PRBOOM_VITA_DIAGNOSTICS
+  if (vita_diag_scene_trace)
+    lprintf(LO_DEBUG | LO_VITA_RENDER, "[PRBOOM-VITA-DIAG] scene=%u stage=walls done\n", vita_diag_scene_serial);
+#endif
 
   // masked geometry
   glEnable(GL_ALPHA_TEST);
@@ -3239,6 +3311,10 @@ void gld_DrawScene(player_t *player)
       gld_ProcessWall(gld_drawinfo.items[GLDIT_MWALL][i].item.wall);
     }
   }
+#ifdef PRBOOM_VITA_DIAGNOSTICS
+  if (vita_diag_scene_trace)
+    lprintf(LO_DEBUG | LO_VITA_RENDER, "[PRBOOM-VITA-DIAG] scene=%u stage=masked_walls done\n", vita_diag_scene_serial);
+#endif
 
   gl_EnableFog(false);
   gld_EnableDetail(false);
@@ -3262,11 +3338,25 @@ void gld_DrawScene(player_t *player)
   // opaque sprites
   glAlphaFunc(GL_GEQUAL, gl_mask_sprite_threshold_f);
   gld_DrawItemsSortSprites(GLDIT_SPRITE);
+#ifdef PRBOOM_VITA_DIAGNOSTICS
+  if (vita_diag_scene_trace)
+    lprintf(LO_DEBUG | LO_VITA_RENDER, "[PRBOOM-VITA-DIAG] scene=%u stage=opaque_sprites begin count=%d\n",
+            vita_diag_scene_serial, gld_drawinfo.num_items[GLDIT_SPRITE]);
+#endif
   for (i = gld_drawinfo.num_items[GLDIT_SPRITE] - 1; i >= 0; i--)
   {
+#ifdef PRBOOM_VITA_DIAGNOSTICS
+    if (vita_diag_scene_trace && ((i & 255) == 0 || i == gld_drawinfo.num_items[GLDIT_SPRITE] - 1))
+      lprintf(LO_DEBUG | LO_VITA_RENDER, "[PRBOOM-VITA-DIAG] scene=%u stage=opaque_sprites item=%d/%d\n",
+              vita_diag_scene_serial, i, gld_drawinfo.num_items[GLDIT_SPRITE]);
+#endif
     gld_SetFog(gld_drawinfo.items[GLDIT_SPRITE][i].item.sprite->fogdensity);
     gld_DrawSprite(gld_drawinfo.items[GLDIT_SPRITE][i].item.sprite);
   }
+#ifdef PRBOOM_VITA_DIAGNOSTICS
+  if (vita_diag_scene_trace)
+    lprintf(LO_DEBUG | LO_VITA_RENDER, "[PRBOOM-VITA-DIAG] scene=%u stage=opaque_sprites done\n", vita_diag_scene_serial);
+#endif
   glAlphaFunc(GL_GEQUAL, 0.5f);
 
   // mode for viewing all the alive monsters
@@ -3359,6 +3449,13 @@ void gld_DrawScene(player_t *player)
    */
   if (gld_drawinfo.num_items[GLDIT_TWALL] > 0 || gld_drawinfo.num_items[GLDIT_TSPRITE] > 0)
   {
+#ifdef PRBOOM_VITA_DIAGNOSTICS
+      if (vita_diag_scene_trace)
+        lprintf(LO_DEBUG | LO_VITA_RENDER, "[PRBOOM-VITA-DIAG] scene=%u stage=transparent begin twall=%d tsprite=%d\n",
+                vita_diag_scene_serial,
+                gld_drawinfo.num_items[GLDIT_TWALL],
+                gld_drawinfo.num_items[GLDIT_TSPRITE]);
+#endif
       int twall_idx   = gld_drawinfo.num_items[GLDIT_TWALL] - 1;
       int tsprite_idx = gld_drawinfo.num_items[GLDIT_TSPRITE] - 1;
 
@@ -3418,6 +3515,10 @@ void gld_DrawScene(player_t *player)
       }
       glAlphaFunc(GL_GEQUAL, 0.5f);
       glEnable(GL_ALPHA_TEST);
+#ifdef PRBOOM_VITA_DIAGNOSTICS
+      if (vita_diag_scene_trace)
+        lprintf(LO_DEBUG | LO_VITA_RENDER, "[PRBOOM-VITA-DIAG] scene=%u stage=transparent done\n", vita_diag_scene_serial);
+#endif
   }
 
   // e6y: detail
@@ -3447,4 +3548,9 @@ void gld_DrawScene(player_t *player)
 #endif
 
   glsl_SetActiveShader(NULL);
+
+#ifdef PRBOOM_VITA_DIAGNOSTICS
+  if (vita_diag_scene_trace)
+    lprintf(LO_DEBUG | LO_VITA_RENDER, "[PRBOOM-VITA-DIAG] scene=%u stage=draw_scene done\n", vita_diag_scene_serial);
+#endif
 }
