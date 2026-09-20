@@ -62,6 +62,9 @@
 #include "lprintf.h"
 #include "e6y.h"//e6y
 
+/* Compatibility button sounds traditionally use a zero-coordinate origin. */
+static degenmobj_t button_zero_soundorg;
+
 //
 //      source animation definition
 //
@@ -2539,12 +2542,12 @@ void P_UpdateSpecials (void)
         {
           /* don't take the address of the switch's sound origin,
            * unless in a compatibility mode. */
-          mobj_t *so = (mobj_t *)buttonlist[i].soundorg;
+          degenmobj_t *so = buttonlist[i].soundorg;
           if (default_comp[comp_sound] || compatibility_level < prboom_6_compatibility)
             /* since the buttonlist array is usually zeroed out,
              * button popouts generally appear to come from (0,0) */
-            so = (mobj_t *)&buttonlist[i].soundorg;
-          S_StartSound(so, sfx_swtchn);
+            so = &button_zero_soundorg;
+          S_StartSoundAtOrigin(so, sfx_swtchn);
         }
         memset(&buttonlist[i],0,sizeof(button_t));
       }

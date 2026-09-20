@@ -90,7 +90,7 @@ void T_MoveCeiling (ceiling_t* ceiling)
           case genSilentCrusher:
             break;
           default:
-            S_StartSound((mobj_t *)&ceiling->sector->soundorg,sfx_stnmov);
+            S_StartSoundAtOrigin(&ceiling->sector->soundorg,sfx_stnmov);
             break;
         }
       }
@@ -120,7 +120,7 @@ void T_MoveCeiling (ceiling_t* ceiling)
 
           // crushers reverse direction at the top
           case silentCrushAndRaise:
-            S_StartSound((mobj_t *)&ceiling->sector->soundorg,sfx_pstop);
+            S_StartSoundAtOrigin(&ceiling->sector->soundorg,sfx_pstop);
             // fallthrough
           case genSilentCrusher:
           case genCrusher:
@@ -156,7 +156,7 @@ void T_MoveCeiling (ceiling_t* ceiling)
           case genSilentCrusher:
             break;
           default:
-            S_StartSound((mobj_t *)&ceiling->sector->soundorg,sfx_stnmov);
+            S_StartSoundAtOrigin(&ceiling->sector->soundorg,sfx_stnmov);
         }
       }
 
@@ -177,7 +177,7 @@ void T_MoveCeiling (ceiling_t* ceiling)
           // make platform stop at bottom of all crusher strokes
           // except generalized ones, reset speed, start back up
           case silentCrushAndRaise:
-            S_StartSound((mobj_t *)&ceiling->sector->soundorg,sfx_pstop);
+            S_StartSoundAtOrigin(&ceiling->sector->soundorg,sfx_pstop);
             // fallthrough
           case crushAndRaise:
             ceiling->speed = CEILSPEED;

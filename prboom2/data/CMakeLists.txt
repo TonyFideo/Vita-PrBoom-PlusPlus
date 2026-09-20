@@ -437,6 +437,30 @@ if(VITA)
     set(VITA_DATA_CONFIG "${CMAKE_SOURCE_DIR}/data/vita/prboom-plus.cfg")
     set(VITA_DATA_SOUNDFONT "${CMAKE_SOURCE_DIR}/data/vita/TimGM6mb.sf2"
         CACHE FILEPATH "Optional default FluidSynth soundfont for data.zip")
+    set(VITA_FREEDOOM_DIR "" CACHE PATH
+        "Optional directory containing Freedoom IWADs and attribution files")
+    set(VITA_FREEDOOM_FILES)
+    if(VITA_FREEDOOM_DIR)
+        set(VITA_FREEDOOM1_WAD "${VITA_FREEDOOM_DIR}/freedoom1.wad")
+        set(VITA_FREEDOOM2_WAD "${VITA_FREEDOOM_DIR}/freedoom2.wad")
+        set(VITA_FREEDOOM_COPYING "${VITA_FREEDOOM_DIR}/COPYING.txt")
+        set(VITA_FREEDOOM_CREDITS "${VITA_FREEDOOM_DIR}/CREDITS.txt")
+        set(VITA_FREEDOOM_MUSIC_CREDITS "${VITA_FREEDOOM_DIR}/CREDITS-MUSIC.txt")
+        set(VITA_FREEDOOM_FILES
+            "${VITA_FREEDOOM1_WAD}"
+            "${VITA_FREEDOOM2_WAD}"
+            "${VITA_FREEDOOM_COPYING}"
+            "${VITA_FREEDOOM_CREDITS}"
+            "${VITA_FREEDOOM_MUSIC_CREDITS}"
+        )
+        foreach(VITA_FREEDOOM_FILE IN LISTS VITA_FREEDOOM_FILES)
+            if(NOT EXISTS "${VITA_FREEDOOM_FILE}")
+                message(FATAL_ERROR
+                    "VITA_FREEDOOM_DIR is missing required file: ${VITA_FREEDOOM_FILE}")
+            endif()
+        endforeach()
+        message(STATUS "Bundling Freedoom IWADs from ${VITA_FREEDOOM_DIR}")
+    endif()
     set(VITA_ZIP_TOOL "" CACHE FILEPATH "ZIP archiver used to create Vita data.zip")
     if(NOT VITA_ZIP_TOOL)
         find_program(VITA_ZIP_TOOL
@@ -479,6 +503,9 @@ if(VITA)
         "${WAD_DATA_PATH}"
         "${VITA_DATA_CONFIG}"
     )
+    if(VITA_FREEDOOM_DIR)
+        list(APPEND VITA_DATA_ZIP_DEPENDS ${VITA_FREEDOOM_FILES})
+    endif()
     set(VITA_DATA_ZIP_COMMANDS
         COMMAND "${CMAKE_COMMAND}" -E remove_directory "${VITA_DATA_STAGE}"
         COMMAND "${CMAKE_COMMAND}" -E remove -f "${VITA_DATA_ZIP}"
@@ -489,6 +516,27 @@ if(VITA)
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
             "${VITA_DATA_CONFIG}" "${VITA_DATA_STAGE}/data/PrBoom++/prboom-plus.cfg"
     )
+    if(VITA_FREEDOOM_DIR)
+        list(APPEND VITA_DATA_ZIP_COMMANDS
+            COMMAND "${CMAKE_COMMAND}" -E make_directory
+                "${VITA_DATA_STAGE}/data/PrBoom++/licenses"
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${VITA_FREEDOOM1_WAD}"
+                "${VITA_DATA_STAGE}/data/PrBoom++/iwads/freedoom1.wad"
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${VITA_FREEDOOM2_WAD}"
+                "${VITA_DATA_STAGE}/data/PrBoom++/iwads/freedoom2.wad"
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${VITA_FREEDOOM_COPYING}"
+                "${VITA_DATA_STAGE}/data/PrBoom++/licenses/Freedoom-COPYING.txt"
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${VITA_FREEDOOM_CREDITS}"
+                "${VITA_DATA_STAGE}/data/PrBoom++/licenses/Freedoom-CREDITS.txt"
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${VITA_FREEDOOM_MUSIC_CREDITS}"
+                "${VITA_DATA_STAGE}/data/PrBoom++/licenses/Freedoom-CREDITS-MUSIC.txt"
+        )
+    endif()
     if(EXISTS "${VITA_DATA_SOUNDFONT}")
         list(APPEND VITA_DATA_ZIP_DEPENDS "${VITA_DATA_SOUNDFONT}")
         list(APPEND VITA_DATA_ZIP_COMMANDS
@@ -513,7 +561,7 @@ if(VITA)
         # would try to cd there before CMake recreates it.
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
         DEPENDS ${VITA_DATA_ZIP_DEPENDS}
-        COMMENT "Packaging Vita data.zip (without doom1.wad)"
+        COMMENT "Packaging Vita data.zip"
         VERBATIM
     )
     add_custom_target(vita-data-zip ALL DEPENDS "${VITA_DATA_ZIP}")

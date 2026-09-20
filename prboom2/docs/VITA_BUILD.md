@@ -16,6 +16,18 @@ cmake -S . -B build-vita -G Ninja \
 cmake --build build-vita --target vita-prboom++.vpk-vpk
 ```
 
+To bundle the local Freedoom 0.13.0 IWADs and their attribution files in
+`data.zip`, add the directory containing `freedoom1.wad`, `freedoom2.wad`,
+`COPYING.txt`, `CREDITS.txt` and `CREDITS-MUSIC.txt`:
+
+```sh
+  -DVITA_FREEDOOM_DIR=/path/to/freedoom-0.13.0
+```
+
+The project requires CMake 3.5 or newer.  The VitaSDK toolchain also needs to
+be visible through `VITASDK`, and its `bin` directory must be on `PATH` because
+the build invokes the bundled VitaGL Makefile.
+
 `VITA_HOST_CC` and `VITA_ZIP_TOOL` are host paths. Change them to the paths
 used by the local MSYS2 installation if they differ.
 
@@ -30,7 +42,9 @@ Outputs:
 
 - `build-vita/src/vita-prboom++.vpk` - installable Vita package.
 - `build-vita/data.zip` - data package containing the internal PrBoom+ data
-  and configuration, without `doom1.wad`.
+  and configuration, without `doom1.wad`. When `VITA_FREEDOOM_DIR` is set,
+  it also contains `freedoom1.wad`, `freedoom2.wad` and their attribution
+  files under `data/PrBoom++/iwads/` and `data/PrBoom++/licenses/`.
 
 ## Vita data layout
 
@@ -39,9 +53,15 @@ After installing the VPK, the launcher expects:
 ```text
 ux0:/data/PrBoom++/
 ├── iwads/
-│   └── doom*.wad
+│   ├── doom*.wad
+│   ├── freedoom1.wad
+│   └── freedoom2.wad
 ├── pwads/
 │   └── *.wad
+├── licenses/
+│   ├── Freedoom-COPYING.txt
+│   ├── Freedoom-CREDITS.txt
+│   └── Freedoom-CREDITS-MUSIC.txt
 ├── prboom-plus.cfg
 └── prboom-plus.wad
 ```

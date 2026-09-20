@@ -2984,18 +2984,21 @@ void glEnd(void) {
 	GLboolean streams_ready = GL_TRUE;
 	for (int i = 0; i < ffp_vertex_num_params; i++) {
 		int stream_result = sceGxmSetVertexStream(gxm_context, i, legacy_pool);
-#ifdef VITA_GL_DIAGNOSTICS
 		if (stream_result) {
+			/* Stream setup is a correctness condition, not just a diagnostic. */
 			streams_ready = GL_FALSE;
+#ifdef VITA_GL_DIAGNOSTICS
 			vgl_diag_frame_stream_errors++;
 			vgl_diag_frame_last_stream_error = (uint32_t)stream_result;
 			vgl_log("[VGL-DIAG] sceGxmSetVertexStream failed: stream=%d result=0x%08X (%s)\n",
 				i, (uint32_t)stream_result, get_gxm_error_literal(stream_result));
-		}
 #endif
+		}
 	}
 	if (!streams_ready) {
+	#ifdef VITA_GL_DIAGNOSTICS
 		vgl_diag_frame_dropped_draws++;
+	#endif
 		legacy_pool_ptr = legacy_pool;
 		restore_polygon_mode(prim);
 		return;

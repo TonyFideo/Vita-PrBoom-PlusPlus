@@ -70,10 +70,18 @@
 
 const char* S_music_files[NUMMUSIC]; // cournia - stores music file names
 
+typedef enum
+{
+  sound_origin_none = 0,
+  sound_origin_mobj,
+  sound_origin_degen
+} sound_origin_type_t;
+
 typedef struct
 {
   sfxinfo_t *sfxinfo;  // sound information (if null, channel avail.)
   void *origin;        // origin of sound
+  sound_origin_type_t origin_type;
   int handle;          // handle of the sound being played
   int is_pickup;       // killough 4/25/98: whether sound is a player's weapon
   int pitch;
@@ -114,10 +122,30 @@ int idmusnum;
 
 void S_StopChannel(int cnum);
 
-int S_AdjustSoundParams(mobj_t *listener, mobj_t *source,
-                        int *vol, int *sep, int *pitch);
+static int S_AdjustSoundParams(mobj_t *listener, void *source,
+                               sound_origin_type_t source_type,
+                               int *vol, int *sep, int *pitch);
 
-static int S_getChannel(void *origin, sfxinfo_t *sfxinfo, int is_pickup);
+static int S_getChannel(void *origin, sound_origin_type_t origin_type,
+                        sfxinfo_t *sfxinfo, int is_pickup);
+
+static void S_GetSoundOriginPosition(void *origin,
+                                     sound_origin_type_t origin_type,
+                                     fixed_t *x, fixed_t *y)
+{
+  if (origin_type == sound_origin_degen)
+  {
+    degenmobj_t *source = (degenmobj_t *)origin;
+    *x = source->x;
+    *y = source->y;
+  }
+  else
+  {
+    mobj_t *source = (mobj_t *)origin;
+    *x = source->x;
+    *y = source->y;
+  }
+}
 
 // Initializes sound stuff, including volume
 // Sets channels, SFX and music volume,
@@ -233,11 +261,16 @@ void S_Start(void)
   S_ChangeMusic(mnum, true);
 }
 
-void S_StartSoundAtVolume(void *origin_p, int sfx_id, int volume)
+static void S_StartSoundAtVolumeEx(void *origin_p,
+                                   sound_origin_type_t origin_type,
+                                   int sfx_id, int volume)
 {
   int sep, pitch, priority, cnum, is_pickup;
   sfxinfo_t *sfx;
-  mobj_t *origin = (mobj_t *) origin_p;
+  fixed_t origin_x, origin_y;
+
+  if (!origin_p)
+    origin_type = sound_origin_none;
 
   //jff 1/22/98 return if sound is not enabled
   if (!snd_card || nosfxparm)
@@ -277,17 +310,22 @@ void S_StartSoundAtVolume(void *origin_p, int sfx_id, int volume)
   // Check to see if it is audible, modify the params
   // killough 3/7/98, 4/25/98: code rearranged slightly
 
-  if (!origin || (origin == players[displayplayer].mo && walkcamera.type < 2)) {
+  if (!origin_p ||
+      (origin_type == sound_origin_mobj &&
+       origin_p == players[displayplayer].mo && walkcamera.type < 2)) {
     sep = NORM_SEP;
     volume *= 8;
   } else
-    if (!S_AdjustSoundParams(players[displayplayer].mo, origin, &volume,
-                             &sep, &pitch))
+    if (!S_AdjustSoundParams(players[displayplayer].mo, origin_p, origin_type,
+                             &volume, &sep, &pitch))
       return;
     else
-      if ( origin->x == players[displayplayer].mo->x &&
-           origin->y == players[displayplayer].mo->y)
+    {
+      S_GetSoundOriginPosition(origin_p, origin_type, &origin_x, &origin_y);
+      if (origin_x == players[displayplayer].mo->x &&
+          origin_y == players[displayplayer].mo->y)
         sep = NORM_SEP;
+    }
 
   // hacks to vary the sfx pitches
   if (sfx_id >= sfx_sawup && sfx_id <= sfx_sawhit)
@@ -304,7 +342,8 @@ void S_StartSoundAtVolume(void *origin_p, int sfx_id, int volume)
 
   // kill old sound
   for (cnum=0 ; cnum<numChannels ; cnum++)
-    if (channels[cnum].sfxinfo && channels[cnum].origin == origin &&
+    if (channels[cnum].sfxinfo && channels[cnum].origin == origin_p &&
+        channels[cnum].origin_type == origin_type &&
         (comp[comp_sound] || channels[cnum].is_pickup == is_pickup))
       {
         S_StopChannel(cnum);
@@ -312,7 +351,7 @@ void S_StartSoundAtVolume(void *origin_p, int sfx_id, int volume)
       }
 
   // try to find a channel
-  cnum = S_getChannel(origin, sfx, is_pickup);
+  cnum = S_getChannel(origin_p, origin_type, sfx, is_pickup);
 
   if (cnum<0)
     return;
@@ -335,6 +374,18 @@ void S_StartSoundAtVolume(void *origin_p, int sfx_id, int volume)
       channels[cnum].pitch = pitch;
     }
   }
+}
+
+void S_StartSoundAtVolume(void *origin, int sfx_id, int volume)
+{
+  S_StartSoundAtVolumeEx(origin, origin ? sound_origin_mobj : sound_origin_none,
+                         sfx_id, volume);
+}
+
+void S_StartSoundAtOrigin(void *origin, int sfx_id)
+{
+  S_StartSoundAtVolumeEx(origin, origin ? sound_origin_degen : sound_origin_none,
+                         sfx_id, snd_SfxVolume);
 }
 
 void S_StartSound(void *origin, int sfx_id)
@@ -435,7 +486,7 @@ void S_UpdateSounds(void* listener_p)
               // check non-local sounds for distance clipping
               // or modify their params
               if (c->origin && listener_p != c->origin) { // killough 3/20/98
-                if (!S_AdjustSoundParams(listener, c->origin,
+                if (!S_AdjustSoundParams(listener, c->origin, c->origin_type,
                                          &volume, &sep, &pitch))
                   S_StopChannel(cnum);
                 else
@@ -668,10 +719,12 @@ void S_StopChannel(int cnum)
 // Otherwise, modifies parameters and returns 1.
 //
 
-int S_AdjustSoundParams(mobj_t *listener, mobj_t *source,
-                        int *vol, int *sep, int *pitch)
+static int S_AdjustSoundParams(mobj_t *listener, void *source,
+                               sound_origin_type_t source_type,
+                               int *vol, int *sep, int *pitch)
 {
   fixed_t adx, ady,approx_dist;
+  fixed_t source_x, source_y;
   angle_t angle;
 
   //jff 1/22/98 return if sound is not enabled
@@ -694,17 +747,22 @@ int S_AdjustSoundParams(mobj_t *listener, mobj_t *source,
   if (!listener)
     return 0;
 
+  if (!source)
+    return 0;
+
+  S_GetSoundOriginPosition(source, source_type, &source_x, &source_y);
+
   // calculate the distance to sound origin
   //  and clip it if necessary
   if (walkcamera.type > 1)
   {
-    adx = D_abs(walkcamera.x - source->x);
-    ady = D_abs(walkcamera.y - source->y);
+    adx = D_abs(walkcamera.x - source_x);
+    ady = D_abs(walkcamera.y - source_y);
   }
   else
   {
-    adx = D_abs(listener->x - source->x);
-    ady = D_abs(listener->y - source->y);
+    adx = D_abs(listener->x - source_x);
+    ady = D_abs(listener->y - source_y);
   }
 
   // From _GG1_ p.428. Appox. eucledian distance fast.
@@ -721,7 +779,7 @@ int S_AdjustSoundParams(mobj_t *listener, mobj_t *source,
     return 0;
 
   // angle of source to listener
-  angle = R_PointToAngle2(listener->x, listener->y, source->x, source->y);
+  angle = R_PointToAngle2(listener->x, listener->y, source_x, source_y);
 
   if (angle <= listener->angle)
     angle += 0xffffffff;
@@ -748,7 +806,8 @@ int S_AdjustSoundParams(mobj_t *listener, mobj_t *source,
 //
 // killough 4/25/98: made static, added is_pickup argument
 
-static int S_getChannel(void *origin, sfxinfo_t *sfxinfo, int is_pickup)
+static int S_getChannel(void *origin, sound_origin_type_t origin_type,
+                        sfxinfo_t *sfxinfo, int is_pickup)
 {
   // channel number to use
   int cnum;
@@ -761,6 +820,7 @@ static int S_getChannel(void *origin, sfxinfo_t *sfxinfo, int is_pickup)
   // Find an open channel
   for (cnum=0; cnum<numChannels && channels[cnum].sfxinfo; cnum++)
     if (origin && channels[cnum].origin == origin &&
+        channels[cnum].origin_type == origin_type &&
         channels[cnum].is_pickup == is_pickup)
       {
         S_StopChannel(cnum);
@@ -782,6 +842,7 @@ static int S_getChannel(void *origin, sfxinfo_t *sfxinfo, int is_pickup)
   c = &channels[cnum];              // channel is decided to be cnum.
   c->sfxinfo = sfxinfo;
   c->origin = origin;
+  c->origin_type = origin_type;
   c->is_pickup = is_pickup;         // killough 4/25/98
   return cnum;
 }

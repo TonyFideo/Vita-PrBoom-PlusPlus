@@ -268,7 +268,7 @@ void T_MoveFloor(floormove_t* floor)
   );
 
   if (!(leveltime&7))     // make the floormove sound
-    S_StartSound((mobj_t *)&floor->sector->soundorg, sfx_stnmov);
+    S_StartSoundAtOrigin(&floor->sector->soundorg, sfx_stnmov);
 
   if (res == pastdest)    // if destination height is reached
   {
@@ -350,7 +350,7 @@ void T_MoveFloor(floormove_t* floor)
     // Moving floors (but not plats) in versions <= v1.2 did not
     // make floor stop sound
     if (compatibility_level > doom_12_compatibility)
-        S_StartSound((mobj_t *)&floor->sector->soundorg, sfx_pstop);
+        S_StartSoundAtOrigin(&floor->sector->soundorg, sfx_pstop);
   }
 }
 
@@ -417,7 +417,7 @@ void T_MoveElevator(elevator_t* elevator)
 
   // make floor move sound
   if (!(leveltime&7))
-    S_StartSound((mobj_t *)&elevator->sector->soundorg, sfx_stnmov);
+    S_StartSoundAtOrigin(&elevator->sector->soundorg, sfx_stnmov);
 
   if (res == pastdest)            // if destination height acheived
   {
@@ -426,7 +426,7 @@ void T_MoveElevator(elevator_t* elevator)
     P_RemoveThinker(&elevator->thinker);    // remove elevator from actives
 
     // make floor stop sound
-    S_StartSound((mobj_t *)&elevator->sector->soundorg, sfx_pstop);
+    S_StartSoundAtOrigin(&elevator->sector->soundorg, sfx_pstop);
   }
 }
 

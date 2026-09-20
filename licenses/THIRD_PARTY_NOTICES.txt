@@ -1,0 +1,47 @@
+Third-party components shipped with Vita-PrBoom++
+=================================================
+
+Component              License / notice                 File(s)
+---------------------  --------------------------------  -------------------------------
+PrBoom+ 2.6.66         GNU GPL v2                       PrBoom-Plus-COPYING.txt
+vitaGL-modern          GNU LGPL v3 or later             VitaGL-COPYING
+                                                        VitaGL-COPYING.LESSER
+vitaShaRK              GNU LGPL v3 or later             vitaShaRK-LICENSE
+VitaSDK vita-headers   MIT                              VitaSDK-vita-headers-LICENSE.md
+VitaSDK toolchain      MIT                              VitaSDK-vita-toolchain-COPYING
+Freedoom 0.13.0        BSD-style Freedoom license       Freedoom-COPYING.txt
+Freedoom contributors  Project and music credits       Freedoom-CREDITS.txt
+                                                        Freedoom-CREDITS-MUSIC.txt
+SDL2                   zlib license                     SDL2-LICENSE.txt
+SDL2_image             zlib license                     SDL2_image-LICENSE.txt
+SDL2_mixer             zlib license                     SDL2_mixer-LICENSE.txt
+SDL2_net               zlib license                     SDL2_net-LICENSE.txt
+DUMB 0.9.3             DUMB licence                    DUMB-licence.txt
+FluidSynth-lite        GNU Library GPL v2 or later      FluidSynth-COPYING
+mpg123                 GNU LGPL v2.1                    mpg123-COPYING.txt
+libogg                 Xiph BSD-style license           Ogg-COPYING.txt
+libvorbis              Xiph BSD-style license           Vorbis-COPYING
+zlib                   zlib license                     zlib-LICENSE
+
+Source links
+------------
+
+PrBoom+:        https://github.com/coelckers/prboom-plus
+vitaGL:         https://github.com/Rinnegatamante/vitaGL
+vitaShaRK:      https://github.com/Rinnegatamante/vitaShaRK
+vita-headers:    https://github.com/vitasdk/vita-headers
+vita-toolchain:  https://github.com/vitasdk/vita-toolchain
+Freedoom:       https://github.com/freedoom/freedoom
+SDL2:           https://github.com/libsdl-org/SDL
+SDL2_image:     https://github.com/libsdl-org/SDL_image
+SDL2_mixer:     https://github.com/libsdl-org/SDL_mixer
+SDL2_net:       https://github.com/libsdl-org/SDL_net
+DUMB:           http://dumb.sf.net/
+FluidSynth:     https://github.com/fgsfdsfgs/fluidsynth-lite
+mpg123:         https://github.com/libsdl-org/mpg123
+Ogg:            https://github.com/xiph/ogg
+Vorbis:         https://github.com/xiph/vorbis
+zlib:           https://github.com/madler/zlib
+
+
+libmad, ALSA and PortMidi aren't enabled nor used.

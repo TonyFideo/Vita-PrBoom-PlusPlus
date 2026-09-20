@@ -145,7 +145,7 @@ static void P_StartButton
       buttonlist[i].btimer = time;
       /* use sound origin of line itself - no need to compatibility-wrap
        * as the popout code gets it wrong whatever its value */
-      buttonlist[i].soundorg = (mobj_t *)&line->soundorg;
+      buttonlist[i].soundorg = &line->soundorg;
       return;
     }
 
@@ -167,7 +167,7 @@ void P_ChangeSwitchTexture
   int           useAgain )
 {
   /* Rearranged a bit to avoid too much code duplication */
-  mobj_t  *soundorg;
+  degenmobj_t *soundorg;
   int     i, sound;
   short   *texture, *ttop, *tmid, *tbot;
   bwhere_e position;
@@ -179,7 +179,7 @@ void P_ChangeSwitchTexture
   sound = sfx_swtchn;
   /* use the sound origin of the linedef (its midpoint)
    * unless in a compatibility mode */
-  soundorg = (mobj_t *)&line->soundorg;
+  soundorg = &line->soundorg;
   if (default_comp[comp_sound] || compatibility_level < prboom_6_compatibility) {
     /* usually NULL, unless there is another button already pressed in,
      * in which case it's the sound origin of that button press... */
@@ -211,7 +211,7 @@ void P_ChangeSwitchTexture
     return; /* no switch texture was found to change */
   *texture = switchlist[i^1];
 
-  S_StartSound(soundorg, sound);
+  S_StartSoundAtOrigin(soundorg, sound);
 
   if (useAgain)
     P_StartButton(line, position, switchlist[i], BUTTONTIME);
