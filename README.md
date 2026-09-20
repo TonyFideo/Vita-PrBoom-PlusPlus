@@ -11,7 +11,9 @@
 
 -Updated VitaGL to the latest version.
 
-
+## Thanks to
+-fgsfdsfgs (Original repo author).
+-Rinnegatamante (VitaGl developer).
 ## Original ReadMe file:
 
 ## Building the Vita port
