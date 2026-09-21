@@ -5904,8 +5904,8 @@ setup_menu_t cred_settings[]={
   {"Randy Heit for ZDOOM",S_SKIP|S_CREDIT|S_LEFTJUST,m_null, CR_X2, CR_Y + CR_S*(adcr+5)+CR_SH*cr_adcr},
   {"Michael 'Kodak' Ryssen for DOOMGL",S_SKIP|S_CREDIT|S_LEFTJUST,m_null, CR_X2, CR_Y + CR_S*(adcr+6)+CR_SH*cr_adcr},
   {"Jess Haas for lSDLDoom",S_SKIP|S_CREDIT|S_LEFTJUST,m_null, CR_X2, CR_Y + CR_S*(adcr+7) + CR_SH*cr_adcr},
-  {"FGSFDSFGS",S_SKIP|S_CREDIT|S_LEFTJUST,m_null, CR_X2, CR_Y + CR_S*(adcr+8)+CR_SH*cr_adcr},
-  {"RINNEGATAMANTE",S_SKIP|S_CREDIT|S_LEFTJUST,m_null, CR_X2, CR_Y + CR_S*(adcr+9)+CR_SH*cr_adcr},
+  {"FGSFDSFGS - ORIGINAL PRBOOM+ PORT",S_SKIP|S_CREDIT|S_LEFTJUST,m_null, CR_X2, CR_Y + CR_S*(adcr+8)+CR_SH*cr_adcr},
+  {"RINNEGATAMANTE - FOR VITAGL",S_SKIP|S_CREDIT|S_LEFTJUST,m_null, CR_X2, CR_Y + CR_S*(adcr+9)+CR_SH*cr_adcr},
   {"all others who helped (see AUTHORS file)",S_SKIP|S_CREDIT|S_LEFTJUST,m_null, CR_X2, CR_Y + CR_S*(adcr+10)+CR_SH*cr_adcr},
 
   {0,S_SKIP|S_END,m_null}
@@ -5925,7 +5925,8 @@ void M_DrawCredits(void)     // killough 10/98: credit screen
   {
     // Use V_DrawBackground here deliberately to force drawing a background
     V_DrawBackground(gamemode==shareware ? "CEIL5_1" : "MFLR8_4", 0);
-    M_DrawTitle(81, 9, "PRBOOM", CR_GOLD, PACKAGE_NAME " v" PACKAGE_DISPLAY_VERSION, CR_GOLD);
+    M_DrawTitle(81, 9, "PRBOOM", CR_GOLD,
+      "VITA-PRBOOM++ V" PACKAGE_CREDITS_VERSION, CR_GOLD);
     M_DrawScreenItems(cred_settings);
   }
 }

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.5)
 
-project("Vita-PrBoom-PlusPlus"
+project("Vita-PrBoom++"
     VERSION 2.6.66
     HOMEPAGE_URL "https://github.com/coelckers/prboom-plus")
 
@@ -42,9 +42,10 @@ set(PACKAGE_TARNAME "prboom-plus")
 # Keep the numeric package version for compatibility parsing, while exposing
 # the Vita release identifier in user-facing strings.
 set(PACKAGE_VERSION "${PROJECT_VERSION}")
-set(PACKAGE_DISPLAY_VERSION "2.6.66-1.0")
+set(PACKAGE_DISPLAY_VERSION "2.6.66-1.1")
+set(PACKAGE_CREDITS_VERSION "2.6.66-1.1")
 set(PACKAGE_HOMEPAGE "${PROJECT_HOMEPAGE_URL}")
-set(PACKAGE_STRING "${PROJECT_NAME} ${PACKAGE_DISPLAY_VERSION}")
+set(PACKAGE_STRING "${PACKAGE_NAME} ${PACKAGE_DISPLAY_VERSION}")
 
 # Vita things
 if(VITA)
