@@ -53,7 +53,7 @@ if(VITA)
     set(VITA_TITLEID "PBR002666")
     set(VITA_NAME "Vita-PrBoom++")
     # VitaSDK requires the Vita version field to use the ##.## format.
-    set(VITA_VERSION "01.00")
+    set(VITA_VERSION "01.01")
 endif()
 
 include(CheckSymbolExists)
