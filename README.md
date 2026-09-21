@@ -11,6 +11,7 @@
 
 -Updated VitaGL to the latest version.
 
+
 ## Control setup (customizable)
 -Left/Right sticks = Move/Look
 
